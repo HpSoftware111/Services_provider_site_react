@@ -123,3 +123,6 @@ public
 # Temporary folders
 tmp/
 temp/
+.env
+.env.local
+.env.*.local
