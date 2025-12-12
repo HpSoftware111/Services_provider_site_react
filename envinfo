@@ -1,7 +1,7 @@
 # CityLocal 101 - Environment Configuration
 NODE_ENV=development
 PORT=5000
-
+sss
 # MongoDB Atlas Connection (commented out - IP not whitelisted)
 # MONGODB_URI=mongodb+srv://citylocal101:citylocal101@cluster0.08h8htp.mongodb.net/citylocal101?retryWrites=true&w=majority&appName=Cluster0
 
