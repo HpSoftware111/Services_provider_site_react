@@ -1,0 +1,376 @@
+/* Classic Elegant Business Cards */
+.my-business-page {
+  width: 100%;
+  animation: fadeIn 0.3s ease;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
+}
+
+.page-header-section {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 32px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid #e1e8ed;
+}
+
+.page-title {
+  font-size: 26px;
+  font-weight: 500;
+  color: #2c3e50;
+  margin: 0;
+  font-family: 'Georgia', 'Times New Roman', serif;
+  letter-spacing: -0.3px;
+  line-height: 1.4;
+}
+
+.add-business-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  background: #ffffff;
+  color: #5a6c7d;
+  border: 1px solid #d1d9e0;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+  letter-spacing: 0.1px;
+}
+
+.add-business-btn:hover {
+  background: #f8f9fa;
+  border-color: #95a5a6;
+  color: #2c3e50;
+}
+
+.add-business-btn.primary {
+  padding: 10px 20px;
+  font-size: 14px;
+}
+
+.alert {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 6px;
+  margin-bottom: 20px;
+  font-size: 12px;
+  position: relative;
+  scroll-margin-top: 20px;
+  scroll-margin-bottom: 20px;
+}
+
+.alert-visible {
+  animation: slideDownAndPulse 0.4s ease;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+@keyframes slideDownAndPulse {
+  0% {
+    opacity: 0;
+    transform: translateY(-10px) scale(0.95);
+  }
+  50% {
+    transform: translateY(0) scale(1.02);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.alert-success {
+  background: #d4edda;
+  color: #155724;
+  border: 1px solid #c3e6cb;
+}
+
+.alert-error {
+  background: #f8d7da;
+  color: #721c24;
+  border: 1px solid #f5c6cb;
+}
+
+.alert-close {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  padding: 2px;
+  opacity: 0.7;
+  transition: opacity 0.2s;
+  font-size: 12px;
+}
+
+.alert-close:hover {
+  opacity: 1;
+}
+
+.empty-state {
+  text-align: center;
+  padding: 60px 40px;
+  background: #ffffff;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  border: 1px solid #e1e8ed;
+}
+
+.empty-state i {
+  font-size: 48px;
+  color: #bdc3c7;
+  margin-bottom: 16px;
+}
+
+.empty-state h2 {
+  font-size: 20px;
+  color: #2c3e50;
+  margin: 0 0 8px 0;
+  font-weight: 500;
+  font-family: 'Georgia', 'Times New Roman', serif;
+}
+
+.empty-state p {
+  font-size: 14px;
+  color: #7f8c8d;
+  margin: 0 0 20px 0;
+  line-height: 1.6;
+}
+
+.businesses-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 24px;
+}
+
+.business-card {
+  background: #ffffff;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid #e1e8ed;
+  transition: all 0.2s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+.business-card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  border-color: #d1d9e0;
+}
+
+.business-card-image {
+  position: relative;
+  width: 100%;
+  height: 180px;
+  overflow: hidden;
+  background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+}
+
+.business-card-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.business-card-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+}
+
+.business-card-placeholder i {
+  font-size: 48px;
+  color: #bdc3c7;
+}
+
+/* Status Badge - Top Left Corner */
+.status-badge-corner {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 9px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.status-badge-corner.approved {
+  background: rgba(40, 167, 69, 0.95);
+  color: #ffffff;
+}
+
+.status-badge-corner.pending {
+  background: rgba(255, 193, 7, 0.95);
+  color: #212529;
+}
+
+.status-badge-corner.rejected {
+  background: rgba(220, 53, 69, 0.95);
+  color: #ffffff;
+}
+
+.business-card-content {
+  padding: 20px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.business-card-name {
+  font-size: 17px;
+  font-weight: 500;
+  color: #2c3e50;
+  margin: 0 0 10px 0;
+  line-height: 1.4;
+  font-family: 'Georgia', 'Times New Roman', serif;
+  letter-spacing: -0.1px;
+}
+
+.business-card-description {
+  font-size: 13px;
+  color: #5a6c7d;
+  margin: 0 0 12px 0;
+  line-height: 1.6;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.business-card-stats {
+  display: flex;
+  gap: 20px;
+  padding-top: 16px;
+  border-top: 1px solid #f0f3f6;
+  margin-bottom: 16px;
+}
+
+.stat-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: #7f8c8d;
+}
+
+.stat-item i {
+  color: #bdc3c7;
+  font-size: 11px;
+}
+
+.rejection-notice {
+  margin-bottom: 12px;
+  padding: 8px 10px;
+  background: #fff3cd;
+  border-left: 2px solid #ffc107;
+  border-radius: 4px;
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 11px;
+  color: #856404;
+}
+
+.rejection-notice i {
+  color: #ffc107;
+  flex-shrink: 0;
+  margin-top: 1px;
+  font-size: 12px;
+}
+
+.rejection-notice span {
+  line-height: 1.5;
+}
+
+/* Actions at bottom on hover */
+.business-card-actions {
+  display: flex;
+  gap: 8px;
+  padding-top: 16px;
+  border-top: 1px solid #f0f3f6;
+  opacity: 0;
+  transform: translateY(10px);
+  transition: all 0.2s ease;
+}
+
+.business-card:hover .business-card-actions {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.action-btn {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid #d1d9e0;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  transition: all 0.2s ease;
+  background: #ffffff;
+  color: #5a6c7d;
+  gap: 6px;
+  font-weight: 500;
+}
+
+.action-btn i {
+  font-size: 11px;
+}
+
+.action-btn.view:hover {
+  background: #e7f3ff;
+  border-color: #3498db;
+  color: #2980b9;
+}
+
+.action-btn.edit:hover {
+  background: #e6f7f9;
+  border-color: #1abc9c;
+  color: #16a085;
+}
+
+.action-btn.delete:hover {
+  background: #fff5f5;
+  border-color: #e74c3c;
+  color: #c0392b;
+}
+
+.loading-state {
+  text-align: center;
+  padding: 60px 20px;
+  background: #ffffff;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  color: #7f8c8d;
+  font-size: 14px;
+  border: 1px solid #e1e8ed;
+}
+
+@media (max-width: 768px) {
+  .page-header-section {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .businesses-grid {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+}

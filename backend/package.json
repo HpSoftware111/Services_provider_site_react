@@ -1,0 +1,52 @@
+{
+  "name": "citylocal101-backend",
+  "version": "2.0.0",
+  "description": "Backend API for CityLocal 101 - MERN Stack with MySQL",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js",
+    "seed": "node scripts/seed.js",
+    "migrate": "node scripts/run-all-migrations.js",
+    "migrate-business": "node scripts/run-business-migrations.js",
+    "migrate-profile": "node scripts/add-user-profile-fields-migration.js",
+    "migrate-avatar": "node scripts/update-avatar-field.js",
+    "migrate-approved-at": "node scripts/add-approved-at-field.js",
+    "check-indexes": "node scripts/check-indexes.js",
+    "validate-env": "node scripts/validate-env.js"
+  },
+  "keywords": [
+    "business",
+    "directory",
+    "api",
+    "express",
+    "mysql",
+    "sequelize"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cookie-parser": "^1.4.6",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "express-rate-limit": "^7.1.5",
+    "express-validator": "^7.0.1",
+    "helmet": "^7.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "morgan": "^1.10.0",
+    "multer": "^1.4.5-lts.1",
+    "mysql2": "^3.15.3",
+    "nodemailer": "^7.0.10",
+    "sequelize": "^6.37.7",
+    "stripe": "^14.25.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2"
+  },
+  "engines": {
+    "node": ">=16.0.0",
+    "npm": ">=8.0.0"
+  }
+}
