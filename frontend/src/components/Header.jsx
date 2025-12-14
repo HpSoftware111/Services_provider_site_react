@@ -34,12 +34,12 @@ const Header = () => {
               <li><Link to="/support"><i className="fas fa-headset"></i> Support</Link></li>
               {user && (
                 <>
-                  <li><Link to="/service-request" className="btn-request-service-header"><i className="fas fa-plus-circle"></i> Request a Service</Link></li>
+                  <li><Link to="/user-dashboard/my-business" className="btn-request-service-header"><i className="fas fa-plus-circle"></i> Add a Business</Link></li>
                   <li><Link to="/user-dashboard" className="btn-dashboard"><i className="fas fa-tachometer-alt"></i> Dashboard</Link></li>
                 </>
               )}
               {!user && (
-                <li><Link to="/service-request" className="btn-request-service-header"><i className="fas fa-plus-circle"></i> Request a Service</Link></li>
+                <li><Link to="/user-dashboard/my-business" className="btn-request-service-header"><i className="fas fa-plus-circle"></i> Add a Business</Link></li>
               )}
             </ul>
           </nav>
@@ -53,7 +53,16 @@ const Header = () => {
                   onClick={() => setShowProfileMenu(!showProfileMenu)}
                   aria-label="Profile menu"
                 >
-                  <i className="fas fa-user-circle"></i>
+                  {user.avatar ? (
+                    <img
+                      src={user.avatar}
+                      alt={user.name}
+                      className="profile-avatar-img"
+                      key={user.avatar?.substring(0, 50)}
+                    />
+                  ) : (
+                    <i className="fas fa-user-circle"></i>
+                  )}
                 </button>
                 {/* Mobile Menu Button - Classic 3 Lines */}
                 <button
@@ -77,7 +86,16 @@ const Header = () => {
                     <div className="profile-menu desktop-only">
                       <div className="profile-menu-header">
                         <div className="profile-menu-icon">
-                          <i className="fas fa-user-circle"></i>
+                          {user.avatar ? (
+                            <img
+                              src={user.avatar}
+                              alt={user.name}
+                              className="profile-menu-avatar-img"
+                              key={user.avatar?.substring(0, 50)}
+                            />
+                          ) : (
+                            <i className="fas fa-user-circle"></i>
+                          )}
                         </div>
                         <div className="profile-menu-name">{user.name}</div>
                         <div className="profile-menu-email">{user.email}</div>
@@ -124,7 +142,11 @@ const Header = () => {
                         <div className="mobile-menu-user-info">
                           <div className="mobile-menu-avatar">
                             {user.avatar ? (
-                              <img src={user.avatar} alt={user.name} />
+                              <img
+                                src={user.avatar}
+                                alt={user.name}
+                                key={user.avatar?.substring(0, 50)}
+                              />
                             ) : (
                               <i className="fas fa-user-circle"></i>
                             )}

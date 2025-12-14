@@ -1,14 +1,14 @@
 /**
  * Migration Script: Create Subscription Tables
  * 
- * Creates subscription_plans and business_subscriptions tables
+ * Creates subscription_plans and user_subscriptions tables
  * Run with: node backend/scripts/create-subscription-tables.js
  */
 
 require('dotenv').config();
 const { sequelize } = require('../config/database');
 const SubscriptionPlan = require('../models/SubscriptionPlan');
-const BusinessSubscription = require('../models/BusinessSubscription');
+const UserSubscription = require('../models/UserSubscription');
 
 async function createSubscriptionTables() {
   try {
@@ -161,74 +161,131 @@ async function createSubscriptionTables() {
       }
     }
 
+    // Check and add new subscription feature fields if they don't exist
+    console.log('Checking for subscription feature fields...');
+    const [columns] = await sequelize.query("SHOW COLUMNS FROM subscription_plans");
+    const columnNames = columns.map(col => col.Field);
+
+    if (!columnNames.includes('leadDiscountPercent')) {
+      console.log('Adding leadDiscountPercent column...');
+      await sequelize.query(`
+            ALTER TABLE subscription_plans 
+            ADD COLUMN leadDiscountPercent DECIMAL(5, 2) DEFAULT 0
+        `);
+      console.log('✅ leadDiscountPercent column added\n');
+    }
+
+    if (!columnNames.includes('priorityBoostPoints')) {
+      console.log('Adding priorityBoostPoints column...');
+      await sequelize.query(`
+            ALTER TABLE subscription_plans 
+            ADD COLUMN priorityBoostPoints INTEGER DEFAULT 0
+        `);
+      console.log('✅ priorityBoostPoints column added\n');
+    }
+
+    if (!columnNames.includes('isFeatured')) {
+      console.log('Adding isFeatured column...');
+      await sequelize.query(`
+            ALTER TABLE subscription_plans 
+            ADD COLUMN isFeatured BOOLEAN DEFAULT FALSE
+        `);
+      console.log('✅ isFeatured column added\n');
+    }
+
+    if (!columnNames.includes('hasAdvancedAnalytics')) {
+      console.log('Adding hasAdvancedAnalytics column...');
+      await sequelize.query(`
+            ALTER TABLE subscription_plans 
+            ADD COLUMN hasAdvancedAnalytics BOOLEAN DEFAULT FALSE
+        `);
+      console.log('✅ hasAdvancedAnalytics column added\n');
+    }
+
     // Sync SubscriptionPlan model to ensure all other columns exist
     console.log('Syncing subscription_plans table...');
     await SubscriptionPlan.sync({ alter: true });
     console.log('✅ subscription_plans table synced\n');
 
-    // Sync BusinessSubscription model
-    console.log('Creating/syncing business_subscriptions table...');
-    await BusinessSubscription.sync({ alter: true });
-    console.log('✅ business_subscriptions table created/updated\n');
+    // Sync UserSubscription model
+    console.log('Creating/syncing user_subscriptions table...');
+    await UserSubscription.sync({ alter: true });
+    console.log('✅ user_subscriptions table created/updated\n');
 
-    // Seed default subscription plans if they don't exist
+    // Seed or update default subscription plans
     console.log('Checking for default subscription plans...');
-    const existingPlans = await SubscriptionPlan.count();
+    const existingPlans = await SubscriptionPlan.findAll({
+      order: [['displayOrder', 'ASC'], ['id', 'ASC']]
+    });
 
-    if (existingPlans === 0) {
+    const defaultPlans = [
+      {
+        name: 'Basic Plan',
+        tier: 'BASIC',
+        price: 0.00,
+        billingCycle: 'MONTHLY',
+        description: 'Perfect for getting started',
+        features: [
+          'Standard lead pricing',
+          'Basic support',
+          'Business listing',
+          'Customer reviews'
+        ],
+        leadDiscountPercent: 0,
+        priorityBoostPoints: 0,
+        isFeatured: false,
+        hasAdvancedAnalytics: false,
+        isActive: true,
+        displayOrder: 1
+      },
+      {
+        name: 'Pro Plan',
+        tier: 'PRO',
+        price: 29.99,
+        billingCycle: 'MONTHLY',
+        description: 'Best for growing businesses',
+        features: [
+          '15% discount on leads',
+          '+15 priority boost points',
+          'Priority support',
+          'Enhanced business profile',
+          'Advanced analytics',
+          'Featured listing'
+        ],
+        leadDiscountPercent: 15,
+        priorityBoostPoints: 15,
+        isFeatured: true,
+        hasAdvancedAnalytics: true,
+        isActive: true,
+        displayOrder: 2
+      },
+      {
+        name: 'Premium Plan',
+        tier: 'PREMIUM',
+        price: 79.99,
+        billingCycle: 'MONTHLY',
+        description: 'For established businesses',
+        features: [
+          '25% discount on leads',
+          '+30 priority boost points',
+          '24/7 priority support',
+          'Premium business profile',
+          'Advanced analytics & insights',
+          'Top featured listing',
+          'Custom branding',
+          'Lead tracking & CRM tools'
+        ],
+        leadDiscountPercent: 25,
+        priorityBoostPoints: 30,
+        isFeatured: true,
+        hasAdvancedAnalytics: true,
+        isActive: true,
+        displayOrder: 3
+      }
+    ];
+
+    if (existingPlans.length === 0) {
       console.log('No plans found. Creating default plans...\n');
-
-      const defaultPlans = [
-        {
-          name: 'Basic Plan',
-          tier: 'BASIC',
-          price: 0.00,
-          billingCycle: 'MONTHLY',
-          description: 'Perfect for getting started',
-          features: [
-            'Unlimited leads',
-            'Basic support',
-            'Business listing',
-            'Customer reviews'
-          ],
-          isActive: true,
-          displayOrder: 1
-        },
-        {
-          name: 'Pro Plan',
-          tier: 'PRO',
-          price: 29.99,
-          billingCycle: 'MONTHLY',
-          description: 'Best for growing businesses',
-          features: [
-            'Unlimited leads',
-            'Priority support',
-            'Enhanced business profile',
-            'Advanced analytics',
-            'Featured listing'
-          ],
-          isActive: true,
-          displayOrder: 2
-        },
-        {
-          name: 'Premium Plan',
-          tier: 'PREMIUM',
-          price: 79.99,
-          billingCycle: 'MONTHLY',
-          description: 'For established businesses',
-          features: [
-            'Unlimited leads',
-            '24/7 priority support',
-            'Premium business profile',
-            'Advanced analytics & insights',
-            'Top featured listing',
-            'Custom branding',
-            'Lead tracking & CRM tools'
-          ],
-          isActive: true,
-          displayOrder: 3
-        }
-      ];
 
       for (const planData of defaultPlans) {
         await SubscriptionPlan.create(planData);
@@ -237,7 +294,45 @@ async function createSubscriptionTables() {
 
       console.log('\n✅ Default subscription plans created successfully!');
     } else {
-      console.log(`✅ Found ${existingPlans} existing plan(s). Skipping seed.\n`);
+      console.log(`Found ${existingPlans.length} existing plan(s). Updating with new pricing and features...\n`);
+
+      // Update existing plans based on tier or name match
+      for (const existingPlan of existingPlans) {
+        // Try to match by tier first, then by name
+        let matchingPlan = defaultPlans.find(p => p.tier === existingPlan.tier);
+        if (!matchingPlan) {
+          // Try to match by name (case-insensitive)
+          const nameUpper = (existingPlan.name || '').toUpperCase();
+          if (nameUpper.includes('PREMIUM')) {
+            matchingPlan = defaultPlans.find(p => p.tier === 'PREMIUM');
+          } else if (nameUpper.includes('PRO') && !nameUpper.includes('PREMIUM')) {
+            matchingPlan = defaultPlans.find(p => p.tier === 'PRO');
+          } else if (nameUpper.includes('BASIC')) {
+            matchingPlan = defaultPlans.find(p => p.tier === 'BASIC');
+          } else {
+            // Default to Basic if no match
+            matchingPlan = defaultPlans.find(p => p.tier === 'BASIC');
+          }
+        }
+
+        if (matchingPlan) {
+          await existingPlan.update({
+            price: matchingPlan.price,
+            description: matchingPlan.description,
+            features: matchingPlan.features,
+            leadDiscountPercent: matchingPlan.leadDiscountPercent,
+            priorityBoostPoints: matchingPlan.priorityBoostPoints,
+            isFeatured: matchingPlan.isFeatured,
+            hasAdvancedAnalytics: matchingPlan.hasAdvancedAnalytics,
+            displayOrder: matchingPlan.displayOrder
+          });
+          console.log(`✅ Updated plan: ${existingPlan.name} (tier: ${existingPlan.tier}) - Price: $${matchingPlan.price.toFixed(2)}`);
+        } else {
+          console.log(`⚠️  Could not match plan: ${existingPlan.name} (tier: ${existingPlan.tier})`);
+        }
+      }
+
+      console.log('\n✅ Existing subscription plans updated successfully!');
     }
 
     console.log('\n🎉 Migration completed successfully!');

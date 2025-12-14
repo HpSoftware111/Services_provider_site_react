@@ -305,7 +305,7 @@ const ProviderLeads = () => {
     if (loading && leads.length === 0) {
         return (
             <div className="provider-leads-container">
-                <div className="loading-spinner">Loading leads...</div>
+                <div className="loading-spinner"></div>
             </div>
         );
     }
