@@ -308,6 +308,13 @@ const ServiceRequest = () => {
                 } else if (!/^\d{5}(-\d{4})?$/.test(formData.zipCode.trim())) {
                     errors.zipCode = 'Please enter a valid zip code (e.g., 12345 or 12345-6789)';
                 }
+                // Validate business selection - require at least one business if businesses are available and loaded
+                // Only validate if zip code is valid and businesses have finished loading
+                if (!errors.zipCode && formData.zipCode && formData.zipCode.length >= 5 && formData.categoryId) {
+                    if (!loadingBusinesses && businesses.length > 0 && selectedBusinesses.length === 0) {
+                        errors.selectedBusinesses = 'Please select at least one business to proceed';
+                    }
+                }
                 break;
             case 4:
                 if (!formData.projectTitle || formData.projectTitle.trim() === '') {
@@ -685,10 +692,20 @@ const ServiceRequest = () => {
                                     </div>
                                 ) : businesses.length > 0 ? (
                                     <>
-                                        <div className="business-selection-hint">
-                                            <i className="fas fa-info-circle"></i>
-                                            <span>Select one or more businesses you'd like to contact (optional)</span>
+                                        <div className={`business-selection-hint ${stepErrors.selectedBusinesses ? 'has-error' : ''}`}>
+                                            <i className={`fas fa-${stepErrors.selectedBusinesses ? 'exclamation-circle' : 'info-circle'}`}></i>
+                                            <span>
+                                                {stepErrors.selectedBusinesses
+                                                    ? stepErrors.selectedBusinesses
+                                                    : 'Select at least one business you\'d like to contact *'}
+                                            </span>
                                         </div>
+                                        {stepErrors.selectedBusinesses && (
+                                            <div className="field-error" style={{ marginTop: '8px', marginBottom: '16px' }}>
+                                                <i className="fas fa-exclamation-circle"></i>
+                                                <span>{stepErrors.selectedBusinesses}</span>
+                                            </div>
+                                        )}
                                         <div className="businesses-grid">
                                             {businesses.map((business) => {
                                                 const isSelected = selectedBusinesses.includes(business.id);
@@ -704,6 +721,14 @@ const ServiceRequest = () => {
                                                                     setSelectedBusinesses(prev => prev.filter(id => id !== business.id));
                                                                 } else {
                                                                     setSelectedBusinesses(prev => [...prev, business.id]);
+                                                                }
+                                                                // Clear error when user selects a business
+                                                                if (stepErrors.selectedBusinesses) {
+                                                                    setStepErrors(prev => {
+                                                                        const newErrors = { ...prev };
+                                                                        delete newErrors.selectedBusinesses;
+                                                                        return newErrors;
+                                                                    });
                                                                 }
                                                             }}
                                                         >

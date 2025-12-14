@@ -435,6 +435,12 @@
     color: #667eea;
 }
 
+.business-selection-hint.has-error {
+    color: #dc3545;
+    background: #fff5f5;
+    border: 1px solid #feb2b2;
+}
+
 .business-selection-hint {
     display: flex;
     align-items: center;
