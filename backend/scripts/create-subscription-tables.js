@@ -218,71 +218,71 @@ async function createSubscriptionTables() {
       order: [['displayOrder', 'ASC'], ['id', 'ASC']]
     });
 
-    const defaultPlans = [
-      {
-        name: 'Basic Plan',
-        tier: 'BASIC',
-        price: 0.00,
-        billingCycle: 'MONTHLY',
-        description: 'Perfect for getting started',
-        features: [
+      const defaultPlans = [
+        {
+          name: 'Basic Plan',
+          tier: 'BASIC',
+          price: 0.00,
+          billingCycle: 'MONTHLY',
+          description: 'Perfect for getting started',
+          features: [
           'Standard lead pricing',
-          'Basic support',
-          'Business listing',
-          'Customer reviews'
-        ],
+            'Basic support',
+            'Business listing',
+            'Customer reviews'
+          ],
         leadDiscountPercent: 0,
         priorityBoostPoints: 0,
         isFeatured: false,
         hasAdvancedAnalytics: false,
-        isActive: true,
-        displayOrder: 1
-      },
-      {
-        name: 'Pro Plan',
-        tier: 'PRO',
-        price: 29.99,
-        billingCycle: 'MONTHLY',
-        description: 'Best for growing businesses',
-        features: [
+          isActive: true,
+          displayOrder: 1
+        },
+        {
+          name: 'Pro Plan',
+          tier: 'PRO',
+          price: 29.99,
+          billingCycle: 'MONTHLY',
+          description: 'Best for growing businesses',
+          features: [
           '15% discount on leads',
           '+15 priority boost points',
-          'Priority support',
-          'Enhanced business profile',
-          'Advanced analytics',
-          'Featured listing'
-        ],
+            'Priority support',
+            'Enhanced business profile',
+            'Advanced analytics',
+            'Featured listing'
+          ],
         leadDiscountPercent: 15,
         priorityBoostPoints: 15,
         isFeatured: true,
         hasAdvancedAnalytics: true,
-        isActive: true,
-        displayOrder: 2
-      },
-      {
-        name: 'Premium Plan',
-        tier: 'PREMIUM',
-        price: 79.99,
-        billingCycle: 'MONTHLY',
-        description: 'For established businesses',
-        features: [
+          isActive: true,
+          displayOrder: 2
+        },
+        {
+          name: 'Premium Plan',
+          tier: 'PREMIUM',
+          price: 79.99,
+          billingCycle: 'MONTHLY',
+          description: 'For established businesses',
+          features: [
           '25% discount on leads',
           '+30 priority boost points',
-          '24/7 priority support',
-          'Premium business profile',
-          'Advanced analytics & insights',
-          'Top featured listing',
-          'Custom branding',
-          'Lead tracking & CRM tools'
-        ],
+            '24/7 priority support',
+            'Premium business profile',
+            'Advanced analytics & insights',
+            'Top featured listing',
+            'Custom branding',
+            'Lead tracking & CRM tools'
+          ],
         leadDiscountPercent: 25,
         priorityBoostPoints: 30,
         isFeatured: true,
         hasAdvancedAnalytics: true,
-        isActive: true,
-        displayOrder: 3
-      }
-    ];
+          isActive: true,
+          displayOrder: 3
+        }
+      ];
 
     if (existingPlans.length === 0) {
       console.log('No plans found. Creating default plans...\n');

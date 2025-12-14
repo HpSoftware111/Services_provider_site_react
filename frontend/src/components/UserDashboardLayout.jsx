@@ -90,7 +90,8 @@ const UserDashboardLayout = ({ children }) => {
   // Check if user is a provider/business owner
   const isProvider = user?.role === 'business_owner' || user?.role === 'provider';
 
-  const navItems = [
+  // Customer section items
+  const customerItems = [
     { path: '/user-dashboard/my-business', icon: 'fa-store', label: 'My Business' },
     { path: '/user-dashboard/business-information', icon: 'fa-info-circle', label: 'Business Information' },
     { path: '/user-dashboard/categories-services', icon: 'fa-tags', label: 'Categories & Services' },
@@ -100,14 +101,15 @@ const UserDashboardLayout = ({ children }) => {
     { path: '/user-dashboard/verify-business', icon: 'fa-shield-alt', label: 'Verify Your Business' },
     { path: '/user-dashboard/reviews', icon: 'fa-star', label: 'Reviews' },
     { path: '/user-dashboard/requests', icon: 'fa-clipboard-list', label: 'My Requests' },
-    // Show Leads, Work Orders, and Payouts only for providers/business owners
-    ...(isProvider ? [
-      { path: '/user-dashboard/leads', icon: 'fa-bullhorn', label: 'My Leads' },
-      { path: '/user-dashboard/work-orders', icon: 'fa-tasks', label: 'Work Orders' },
-      { path: '/user-dashboard/payouts', icon: 'fa-money-bill-wave', label: 'My Payouts' },
-      { path: '/user-dashboard/subscriptions', icon: 'fa-crown', label: 'Subscriptions' }
-    ] : []),
     { path: '/user-dashboard/account-settings', icon: 'fa-cog', label: 'Account Settings' },
+  ];
+
+  // Provider section items
+  const providerItems = [
+    { path: '/user-dashboard/leads', icon: 'fa-bullhorn', label: 'My Leads' },
+    { path: '/user-dashboard/work-orders', icon: 'fa-tasks', label: 'Work Orders' },
+    { path: '/user-dashboard/payouts', icon: 'fa-money-bill-wave', label: 'My Payouts' },
+    { path: '/user-dashboard/subscriptions', icon: 'fa-crown', label: 'Subscriptions' }
   ];
 
   return (
@@ -181,17 +183,43 @@ const UserDashboardLayout = ({ children }) => {
           </div>
 
           <nav className="sidebar-nav">
-            {navItems.map((item) => (
-              <Link
-                key={item.path}
-                to={item.path}
-                className={`nav-item ${isActive(item.path) ? 'active' : ''}`}
-                onClick={() => setMobileMenuOpen(false)}
-              >
-                <i className={`fas ${item.icon}`}></i>
-                <span>{item.label}</span>
-              </Link>
-            ))}
+            {/* Customer Section */}
+            <div className="nav-section">
+              <div className="nav-divider">
+                <span className="nav-divider-text">Customer</span>
+              </div>
+              {customerItems.map((item) => (
+                <Link
+                  key={item.path}
+                  to={item.path}
+                  className={`nav-item ${isActive(item.path) ? 'active' : ''}`}
+                  onClick={() => setMobileMenuOpen(false)}
+                >
+                  <i className={`fas ${item.icon}`}></i>
+                  <span>{item.label}</span>
+                </Link>
+              ))}
+            </div>
+
+            {/* Provider Section */}
+            {isProvider && (
+              <div className="nav-section">
+                <div className="nav-divider">
+                  <span className="nav-divider-text">Provider</span>
+                </div>
+                {providerItems.map((item) => (
+                  <Link
+                    key={item.path}
+                    to={item.path}
+                    className={`nav-item ${isActive(item.path) ? 'active' : ''}`}
+                    onClick={() => setMobileMenuOpen(false)}
+                  >
+                    <i className={`fas ${item.icon}`}></i>
+                    <span>{item.label}</span>
+                  </Link>
+                ))}
+              </div>
+            )}
           </nav>
 
           <div className="sidebar-footer">
