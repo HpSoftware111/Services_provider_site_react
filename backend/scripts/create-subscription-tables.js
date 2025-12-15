@@ -219,6 +219,7 @@ async function createSubscriptionTables() {
     });
 
     const defaultPlans = [
+      // Monthly Plans
       {
         name: 'Basic Plan',
         tier: 'BASIC',
@@ -287,6 +288,79 @@ async function createSubscriptionTables() {
         maxLeadsPerMonth: null, // null = unlimited
         isActive: true,
         displayOrder: 3
+      },
+      // Annual Plans (with discount - typically 2 months free)
+      {
+        name: 'Basic Plan (Annual)',
+        tier: 'BASIC',
+        price: 0.00,
+        billingCycle: 'YEARLY',
+        description: 'Perfect for getting started - Annual billing',
+        features: [
+          'Standard lead pricing',
+          'Basic support',
+          'Business listing',
+          'Customer reviews',
+          '10 service requests per month',
+          'Save with annual billing'
+        ],
+        leadDiscountPercent: 0,
+        priorityBoostPoints: 0,
+        isFeatured: false,
+        hasAdvancedAnalytics: false,
+        maxLeadsPerMonth: 10,
+        isActive: true,
+        displayOrder: 4
+      },
+      {
+        name: 'Premium Plan (Annual)',
+        tier: 'PREMIUM',
+        price: 299.9, // Annual pricing
+        billingCycle: 'YEARLY',
+        description: 'Best for growing businesses - Save 17% with annual billing',
+        features: [
+          '15% discount on leads',
+          '+15 priority boost points',
+          'Priority support',
+          'Enhanced business profile',
+          'Advanced analytics',
+          'Featured listing',
+          '30 leads per month',
+          'Save 17% with annual billing'
+        ],
+        leadDiscountPercent: 15,
+        priorityBoostPoints: 15,
+        isFeatured: true,
+        hasAdvancedAnalytics: true,
+        maxLeadsPerMonth: 30,
+        isActive: true,
+        displayOrder: 5
+      },
+      {
+        name: 'Pro Plan (Annual)',
+        tier: 'PRO',
+        price: 799.9, // Annual pricing
+        billingCycle: 'YEARLY',
+        description: 'For established businesses - Save 17% with annual billing',
+        features: [
+          '25% discount on leads',
+          '+30 priority boost points',
+          '24/7 priority support',
+          'Premium business profile',
+          'Advanced analytics & insights',
+          'Top featured listing',
+          'Custom branding',
+          'Lead tracking & CRM tools',
+          'Unlimited leads per month',
+          'Save 17% with annual billing'
+        ],
+        leadDiscountPercent: 25,
+        priorityBoostPoints: 30,
+        isFeatured: true,
+        hasAdvancedAnalytics: true,
+        maxLeadsPerMonth: null, // null = unlimited
+        isActive: true,
+        displayOrder: 6
       }
     ];
 
@@ -339,6 +413,36 @@ async function createSubscriptionTables() {
       }
 
       console.log('\n✅ Existing subscription plans updated successfully!');
+
+      // Check and create annual plans if they don't exist
+      console.log('\n📅 Checking for annual plans...\n');
+      const annualPlans = defaultPlans.filter(p => p.billingCycle === 'YEARLY');
+      const existingAnnualPlans = await SubscriptionPlan.findAll({
+        where: { billingCycle: 'YEARLY' }
+      });
+
+      if (existingAnnualPlans.length === 0 && annualPlans.length > 0) {
+        console.log('No annual plans found. Creating annual plans...\n');
+        for (const annualPlanData of annualPlans) {
+          // Check if annual plan with same name already exists
+          const existing = await SubscriptionPlan.findOne({
+            where: { name: annualPlanData.name }
+          });
+
+          if (!existing) {
+            await SubscriptionPlan.create(annualPlanData);
+            console.log(`✅ Created annual plan: ${annualPlanData.name}`);
+          } else {
+            console.log(`⚠️  Annual plan "${annualPlanData.name}" already exists, skipping...`);
+          }
+        }
+        console.log('\n✅ Annual plans created successfully!');
+      } else if (existingAnnualPlans.length > 0) {
+        console.log(`✓ Found ${existingAnnualPlans.length} existing annual plan(s)`);
+        for (const existingAnnual of existingAnnualPlans) {
+          console.log(`  - ${existingAnnual.name} (${existingAnnual.billingCycle})`);
+        }
+      }
     }
 
     console.log('\n🎉 Migration completed successfully!');

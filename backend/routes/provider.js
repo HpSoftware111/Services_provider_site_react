@@ -328,31 +328,31 @@ router.get('/leads', protect, async (req, res) => {
         let count, leads;
         try {
             const result = await Lead.findAndCountAll({
-                where,
-                include: [
-                    {
-                        model: Category,
-                        as: 'category',
-                        attributes: ['id', 'name', 'icon'],
-                        required: false
-                    },
-                    {
-                        model: User,
-                        as: 'customer',
-                        attributes: ['id', 'name', 'email', 'firstName', 'lastName'],
-                        required: false
-                    },
-                    {
-                        model: Business,
-                        as: 'business',
-                        attributes: ['id', 'name'],
-                        required: false
-                    }
-                ],
-                order: [['createdAt', 'DESC']],
-                limit: pageSize,
-                offset: offset
-            });
+            where,
+            include: [
+                {
+                    model: Category,
+                    as: 'category',
+                    attributes: ['id', 'name', 'icon'],
+                    required: false
+                },
+                {
+                    model: User,
+                    as: 'customer',
+                    attributes: ['id', 'name', 'email', 'firstName', 'lastName'],
+                    required: false
+                },
+                {
+                    model: Business,
+                    as: 'business',
+                    attributes: ['id', 'name'],
+                    required: false
+                }
+            ],
+            order: [['createdAt', 'DESC']],
+            limit: pageSize,
+            offset: offset
+        });
             count = result.count;
             leads = result.rows;
         } catch (dbError) {
@@ -418,7 +418,7 @@ router.get('/leads', protect, async (req, res) => {
                 customerName = lead.customerName || (customer?.name || customer?.firstName || 'Customer');
                 customerEmail = lead.customerEmail || customer?.email;
                 customerPhone = lead.customerPhone || customer?.phone;
-            } else {
+                } else {
                 // Lead not accepted - completely hide contact details
                 customerName = null;
                 customerEmail = null;
@@ -696,11 +696,11 @@ router.patch('/leads/:id/accept', protect, async (req, res) => {
         let lead;
         try {
             lead = await Lead.findOne({
-                where: {
-                    id: req.params.id,
-                    providerId: req.user.id // User ID, not ProviderProfile ID
-                }
-            });
+            where: {
+                id: req.params.id,
+                providerId: req.user.id // User ID, not ProviderProfile ID
+            }
+        });
         } catch (dbError) {
             // If error is about missing columns, try with explicit attributes (migration not run yet)
             if (dbError.message && dbError.message.includes('Unknown column')) {
@@ -940,28 +940,28 @@ router.patch('/leads/:id/accept', protect, async (req, res) => {
 
             // Update lead with payment intent ID and cost (but don't reveal contact details yet)
             try {
-                let metadata = {};
-                if (lead.metadata) {
-                    try {
-                        metadata = typeof lead.metadata === 'string' ? JSON.parse(lead.metadata) : lead.metadata;
-                    } catch (e) {
-                        console.error('Error parsing lead metadata:', e);
-                    }
+            let metadata = {};
+            if (lead.metadata) {
+                try {
+                    metadata = typeof lead.metadata === 'string' ? JSON.parse(lead.metadata) : lead.metadata;
+                } catch (e) {
+                    console.error('Error parsing lead metadata:', e);
                 }
-                metadata.pendingProposal = {
-                    description: description.trim(),
-                    price: parseFloat(price)
-                };
+            }
+            metadata.pendingProposal = {
+                description: description.trim(),
+                price: parseFloat(price)
+            };
 
-                await lead.update({
-                    stripePaymentIntentId: paymentIntent.id,
-                    leadCost: leadCostCents,
-                    metadata: JSON.stringify(metadata)
-                });
+            await lead.update({
+                stripePaymentIntentId: paymentIntent.id,
+                leadCost: leadCostCents,
+                metadata: JSON.stringify(metadata)
+            });
                 console.log(`[Accept Lead] ✅ Lead updated with payment intent ID (awaiting payment confirmation)`);
-            } catch (updateError) {
-                console.error('❌ Failed to update lead:', updateError);
-                throw new Error(`Failed to update lead: ${updateError.message}`);
+        } catch (updateError) {
+            console.error('❌ Failed to update lead:', updateError);
+            throw new Error(`Failed to update lead: ${updateError.message}`);
             }
 
             // Return client secret for frontend to complete payment
@@ -1135,11 +1135,11 @@ router.patch('/leads/:id/reject', protect, async (req, res) => {
         let lead;
         try {
             lead = await Lead.findOne({
-                where: {
-                    id: req.params.id,
-                    providerId: req.user.id // User ID, not ProviderProfile ID
-                }
-            });
+            where: {
+                id: req.params.id,
+                providerId: req.user.id // User ID, not ProviderProfile ID
+            }
+        });
         } catch (dbError) {
             // If error is about missing columns, try with explicit attributes (migration not run yet)
             if (dbError.message && dbError.message.includes('Unknown column')) {
@@ -1215,12 +1215,12 @@ router.patch('/leads/:id/reject', protect, async (req, res) => {
         // Use try-catch to handle missing columns gracefully if migration hasn't been run
         if (serviceRequestId) {
             try {
-                serviceRequest = await ServiceRequest.findByPk(serviceRequestId, {
-                    include: [
-                        { model: User, as: 'customer', attributes: ['id', 'name', 'email', 'firstName', 'lastName'] },
-                        { model: Category, as: 'category', attributes: ['id', 'name'] }
-                    ]
-                });
+            serviceRequest = await ServiceRequest.findByPk(serviceRequestId, {
+                include: [
+                    { model: User, as: 'customer', attributes: ['id', 'name', 'email', 'firstName', 'lastName'] },
+                    { model: Category, as: 'category', attributes: ['id', 'name'] }
+                ]
+            });
             } catch (dbError) {
                 // If error is about missing columns, try with explicit attributes (migration not run yet)
                 if (dbError.message && dbError.message.includes('Unknown column')) {
@@ -1255,9 +1255,9 @@ router.patch('/leads/:id/reject', protect, async (req, res) => {
             // If error is about missing columns, only update status (migration not run yet)
             if (updateError.message && updateError.message.includes('Unknown column')) {
                 console.log('Migration not run yet, updating only status field...');
-                await lead.update({
-                    status: 'rejected'
-                });
+        await lead.update({
+            status: 'rejected'
+        });
                 // Log a warning that rejection reasons weren't saved
                 console.warn('⚠️ Rejection reasons provided but not saved - migration not run yet');
             } else {

@@ -12,27 +12,27 @@ async function getSubscriptionBenefits(userId) {
         let subscription;
         try {
             subscription = await UserSubscription.findOne({
-                where: {
-                    userId: userId,
-                    status: 'ACTIVE'
-                },
-                include: [
-                    {
-                        model: SubscriptionPlan,
-                        as: 'plan',
-                        attributes: [
-                            'id',
-                            'name',
-                            'tier',
-                            'leadDiscountPercent',
-                            'priorityBoostPoints',
-                            'isFeatured',
-                            'hasAdvancedAnalytics',
-                            'maxLeadsPerMonth'
-                        ]
-                    }
-                ]
-            });
+            where: {
+                userId: userId,
+                status: 'ACTIVE'
+            },
+            include: [
+                {
+                    model: SubscriptionPlan,
+                    as: 'plan',
+                    attributes: [
+                        'id',
+                        'name',
+                        'tier',
+                        'leadDiscountPercent',
+                        'priorityBoostPoints',
+                        'isFeatured',
+                        'hasAdvancedAnalytics',
+                        'maxLeadsPerMonth'
+                    ]
+                }
+            ]
+        });
         } catch (dbError) {
             // If error is about missing columns, try with explicit attributes (migration not run yet)
             if (dbError.message && dbError.message.includes('Unknown column')) {

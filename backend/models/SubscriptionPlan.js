@@ -17,8 +17,8 @@ const SubscriptionPlan = sequelize.define('SubscriptionPlan', {
     },
     tier: {
         type: DataTypes.ENUM('BASIC', 'PRO', 'PREMIUM'),
-        allowNull: false,
-        unique: true
+        allowNull: false
+        // Removed unique constraint to allow same tier with different billing cycles (monthly/annual)
     },
     price: {
         type: DataTypes.DECIMAL(10, 2),

@@ -68,7 +68,7 @@ const ServiceRequest = () => {
         // NOT to customers submitting service requests.
         // For customer-facing ServiceRequest page we treat usage as unlimited.
         setMonthlyUsage(null);
-        setUsageLoading(false);
+            setUsageLoading(false);
     };
 
     // Check if a given phone number is already verified for the current user
@@ -717,10 +717,10 @@ const ServiceRequest = () => {
                 navigate('/user-dashboard');
             }, 2000);
         } catch (error) {
-            setMessage({
-                type: 'error',
-                text: error.response?.data?.error || 'Failed to submit service request'
-            });
+                setMessage({
+                    type: 'error',
+                    text: error.response?.data?.error || 'Failed to submit service request'
+                });
         } finally {
             setLoading(false);
         }

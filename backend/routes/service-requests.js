@@ -201,8 +201,8 @@ async function assignProvidersForRequest(serviceRequestId) {
                         isPriorityProvider = subscriptionBenefits.isFeatured === true || subscriptionBenefits.tier === 'PRO';
 
                         if (subscriptionBenefits.priorityBoostPoints > 0) {
-                            score += subscriptionBenefits.priorityBoostPoints;
-                            console.log(`[assignProvidersForRequest] Added ${subscriptionBenefits.priorityBoostPoints} priority boost points for business ${business.id} (user ${business.owner.id}, tier: ${subscriptionBenefits.tier})`);
+                        score += subscriptionBenefits.priorityBoostPoints;
+                        console.log(`[assignProvidersForRequest] Added ${subscriptionBenefits.priorityBoostPoints} priority boost points for business ${business.id} (user ${business.owner.id}, tier: ${subscriptionBenefits.tier})`);
                         }
 
                         if (isPriorityProvider) {
@@ -398,17 +398,17 @@ router.get('/', protect, async (req, res) => {
         let count, serviceRequests;
         try {
             const result = await ServiceRequest.findAndCountAll({
-                where,
-                include: [
-                    { model: User, as: 'customer', attributes: ['id', 'name', 'email', 'phone'] },
-                    { model: Category, as: 'category', attributes: ['id', 'name', 'icon'] },
-                    { model: SubCategory, as: 'subCategory', attributes: ['id', 'name'], required: false },
-                    { model: ProviderProfile, as: 'primaryProvider', attributes: ['id', 'userId'], include: [{ model: User, as: 'user', attributes: ['id', 'name', 'email'] }], required: false }
-                ],
-                order: [['createdAt', 'DESC']],
-                limit,
-                offset
-            });
+            where,
+            include: [
+                { model: User, as: 'customer', attributes: ['id', 'name', 'email', 'phone'] },
+                { model: Category, as: 'category', attributes: ['id', 'name', 'icon'] },
+                { model: SubCategory, as: 'subCategory', attributes: ['id', 'name'], required: false },
+                { model: ProviderProfile, as: 'primaryProvider', attributes: ['id', 'userId'], include: [{ model: User, as: 'user', attributes: ['id', 'name', 'email'] }], required: false }
+            ],
+            order: [['createdAt', 'DESC']],
+            limit,
+            offset
+        });
             count = result.count;
             serviceRequests = result.rows;
         } catch (dbError) {
@@ -492,35 +492,35 @@ router.get('/my/service-requests', protect, async (req, res) => {
         let serviceRequests;
         try {
             serviceRequests = await ServiceRequest.findAll({
-                where,
-                include: [
-                    {
-                        model: Category,
-                        as: 'category',
-                        attributes: ['id', 'name', 'icon']
-                    },
-                    {
-                        model: SubCategory,
-                        as: 'subCategory',
-                        attributes: ['id', 'name'],
-                        required: false
-                    },
-                    {
-                        model: ProviderProfile,
-                        as: 'primaryProvider',
-                        attributes: ['id', 'userId'],
-                        include: [{
-                            model: User,
-                            as: 'user',
-                            attributes: ['id', 'name', 'email', 'phone']
-                        }],
-                        required: false
-                    }
-                ],
-                order: [['createdAt', 'DESC']],
-                limit: pageSize,
-                offset: offset
-            });
+            where,
+            include: [
+                {
+                    model: Category,
+                    as: 'category',
+                    attributes: ['id', 'name', 'icon']
+                },
+                {
+                    model: SubCategory,
+                    as: 'subCategory',
+                    attributes: ['id', 'name'],
+                    required: false
+                },
+                {
+                    model: ProviderProfile,
+                    as: 'primaryProvider',
+                    attributes: ['id', 'userId'],
+                    include: [{
+                        model: User,
+                        as: 'user',
+                        attributes: ['id', 'name', 'email', 'phone']
+                    }],
+                    required: false
+                }
+            ],
+            order: [['createdAt', 'DESC']],
+            limit: pageSize,
+            offset: offset
+        });
         } catch (dbError) {
             // If error is about missing columns, try with explicit attributes (migration not run yet)
             if (dbError.message && dbError.message.includes('Unknown column')) {
@@ -626,35 +626,35 @@ router.get('/my/service-requests/:id', protect, async (req, res) => {
         let serviceRequest;
         try {
             serviceRequest = await ServiceRequest.findOne({
-                where: {
-                    id: requestId,
-                    customerId: req.user.id
+            where: {
+                id: requestId,
+                customerId: req.user.id
+            },
+            include: [
+                {
+                    model: Category,
+                    as: 'category',
+                    attributes: ['id', 'name', 'icon', 'description']
                 },
-                include: [
-                    {
-                        model: Category,
-                        as: 'category',
-                        attributes: ['id', 'name', 'icon', 'description']
-                    },
-                    {
-                        model: SubCategory,
-                        as: 'subCategory',
-                        attributes: ['id', 'name', 'description'],
-                        required: false
-                    },
-                    {
-                        model: ProviderProfile,
-                        as: 'primaryProvider',
-                        attributes: ['id', 'userId'],
-                        include: [{
-                            model: User,
-                            as: 'user',
-                            attributes: ['id', 'name', 'email', 'phone', 'avatar']
-                        }],
-                        required: false
-                    }
-                ]
-            });
+                {
+                    model: SubCategory,
+                    as: 'subCategory',
+                    attributes: ['id', 'name', 'description'],
+                    required: false
+                },
+                {
+                    model: ProviderProfile,
+                    as: 'primaryProvider',
+                    attributes: ['id', 'userId'],
+                    include: [{
+                        model: User,
+                        as: 'user',
+                        attributes: ['id', 'name', 'email', 'phone', 'avatar']
+                    }],
+                    required: false
+                }
+            ]
+        });
         } catch (dbError) {
             // If error is about missing columns, try with explicit attributes (migration not run yet)
             if (dbError.message && dbError.message.includes('Unknown column')) {
@@ -716,31 +716,31 @@ router.get('/my/service-requests/:id', protect, async (req, res) => {
         let allLeads;
         try {
             allLeads = await Lead.findAll({
-                where: {
-                    // Get leads for this customer, or we'll filter by metadata
-                    customerId: req.user.id
-                },
-                include: [
-                    {
-                        model: User,
-                        as: 'provider',
+            where: {
+                // Get leads for this customer, or we'll filter by metadata
+                customerId: req.user.id
+            },
+            include: [
+                {
+                    model: User,
+                    as: 'provider',
                         attributes: ['id', 'name', 'email', 'phone'],
-                        required: false,
-                        include: [{
-                            model: ProviderProfile,
-                            as: 'providerProfile',
-                            attributes: ['id', 'userId'],
-                            required: false
-                        }]
-                    },
-                    {
-                        model: Business,
-                        as: 'business',
-                        attributes: ['id', 'name'],
+                    required: false,
+                    include: [{
+                        model: ProviderProfile,
+                        as: 'providerProfile',
+                        attributes: ['id', 'userId'],
                         required: false
-                    }
-                ]
-            });
+                    }]
+                },
+                {
+                    model: Business,
+                    as: 'business',
+                    attributes: ['id', 'name'],
+                    required: false
+                }
+            ]
+        });
         } catch (dbError) {
             // If error is about missing columns, try with explicit attributes (migration not run yet)
             if (dbError.message && dbError.message.includes('Unknown column')) {
@@ -1037,8 +1037,8 @@ router.get('/my/service-requests/:id', protect, async (req, res) => {
                 const isAccepted = !!providerProposal;
 
                 return {
-                    id: lead.provider.id,
-                    name: lead.provider.name,
+                id: lead.provider.id,
+                name: lead.provider.name,
                     email: isAccepted ? (lead.provider.email || null) : null,
                     phone: isAccepted ? (lead.provider.phone || null) : null
                 };
@@ -1177,9 +1177,9 @@ router.patch('/my/service-requests/:id/cancel', protect, async (req, res) => {
             // If error is about missing columns, only update status (migration not run yet)
             if (updateError.message && updateError.message.includes('Unknown column')) {
                 console.log('Migration not run yet, updating only status field...');
-                await serviceRequest.update({
-                    status: 'CLOSED'
-                });
+        await serviceRequest.update({
+            status: 'CLOSED'
+        });
                 // Log a warning that rejection reasons weren't saved
                 console.warn('⚠️ Rejection reasons provided but not saved - migration not run yet');
             } else {
@@ -1320,19 +1320,19 @@ router.post('/my/service-requests/:id/proposals/:proposalId/create-payment-inten
             let lead;
             try {
                 lead = await Lead.findOne({
-                    where: {
-                        id: leadId
-                        // Don't filter by customerId - leads might not have it set
-                    },
-                    include: [
-                        {
-                            model: User,
-                            as: 'provider', // Lead.providerId -> User.id
-                            attributes: ['id', 'name', 'email'],
-                            required: false
-                        }
-                    ]
-                });
+                where: {
+                    id: leadId
+                    // Don't filter by customerId - leads might not have it set
+                },
+                include: [
+                    {
+                        model: User,
+                        as: 'provider', // Lead.providerId -> User.id
+                        attributes: ['id', 'name', 'email'],
+                        required: false
+                    }
+                ]
+            });
             } catch (dbError) {
                 // If error is about missing columns, try with explicit attributes (migration not run yet)
                 if (dbError.message && dbError.message.includes('Unknown column')) {
@@ -3641,18 +3641,18 @@ router.patch('/my/service-requests/:id/proposals/:proposalId/reject', protect, a
             let lead;
             try {
                 lead = await Lead.findOne({
-                    where: {
-                        id: leadId
-                    },
-                    include: [
-                        {
-                            model: User,
-                            as: 'provider',
-                            attributes: ['id', 'name', 'email'],
-                            required: false
-                        }
-                    ]
-                });
+                where: {
+                    id: leadId
+                },
+                include: [
+                    {
+                        model: User,
+                        as: 'provider',
+                        attributes: ['id', 'name', 'email'],
+                        required: false
+                    }
+                ]
+            });
             } catch (dbError) {
                 // If error is about missing columns, try with explicit attributes (migration not run yet)
                 if (dbError.message && dbError.message.includes('Unknown column')) {
@@ -3846,7 +3846,7 @@ router.patch('/my/service-requests/:id/proposals/:proposalId/reject', protect, a
             }
             // Use try-catch for save() to handle missing columns gracefully
             try {
-                await proposal.save();
+            await proposal.save();
             } catch (saveError) {
                 // If error is about missing columns, only update status (migration not run yet)
                 if (saveError.message && saveError.message.includes('Unknown column')) {
@@ -4424,27 +4424,27 @@ router.get('/:id/proposals', protect, async (req, res) => {
         const formattedProposals = proposals.map(proposal => {
             const isAccepted = (proposal.status || 'SENT') === 'ACCEPTED';
             return {
-                id: proposal.id,
-                details: proposal.details,
-                price: parseFloat(proposal.price),
-                status: proposal.status,
-                paymentStatus: proposal.paymentStatus,
-                paidAt: proposal.paidAt,
-                providerPayoutAmount: proposal.providerPayoutAmount ? parseFloat(proposal.providerPayoutAmount) : null,
-                platformFeeAmount: proposal.platformFeeAmount ? parseFloat(proposal.platformFeeAmount) : null,
-                payoutStatus: proposal.payoutStatus || null,
-                payoutProcessedAt: proposal.payoutProcessedAt || null,
-                provider: proposal.provider?.user ? {
-                    id: proposal.provider.user.id,
-                    name: proposal.provider.user.firstName && proposal.provider.user.lastName
-                        ? `${proposal.provider.user.firstName} ${proposal.provider.user.lastName}`
-                        : proposal.provider.user.name,
+            id: proposal.id,
+            details: proposal.details,
+            price: parseFloat(proposal.price),
+            status: proposal.status,
+            paymentStatus: proposal.paymentStatus,
+            paidAt: proposal.paidAt,
+            providerPayoutAmount: proposal.providerPayoutAmount ? parseFloat(proposal.providerPayoutAmount) : null,
+            platformFeeAmount: proposal.platformFeeAmount ? parseFloat(proposal.platformFeeAmount) : null,
+            payoutStatus: proposal.payoutStatus || null,
+            payoutProcessedAt: proposal.payoutProcessedAt || null,
+            provider: proposal.provider?.user ? {
+                id: proposal.provider.user.id,
+                name: proposal.provider.user.firstName && proposal.provider.user.lastName
+                    ? `${proposal.provider.user.firstName} ${proposal.provider.user.lastName}`
+                    : proposal.provider.user.name,
                     email: isAccepted ? (proposal.provider.user.email || null) : null,
                     phone: isAccepted ? (proposal.provider.user.phone || null) : null,
-                    avatar: proposal.provider.user.avatar
-                } : null,
-                createdAt: proposal.createdAt,
-                updatedAt: proposal.updatedAt
+                avatar: proposal.provider.user.avatar
+            } : null,
+            createdAt: proposal.createdAt,
+            updatedAt: proposal.updatedAt
             };
         });
 

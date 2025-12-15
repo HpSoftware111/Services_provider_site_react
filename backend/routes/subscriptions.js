@@ -9,6 +9,7 @@ const getMonthlyServiceRequestCount = require('../utils/getMonthlyServiceRequest
 // @route   GET /api/subscriptions/plans
 // @desc    Get all active subscription plans (for business owners only)
 // @access  Private (Business owner only)
+// @query   billingCycle - Optional filter by billing cycle (MONTHLY or YEARLY)
 router.get('/plans', protect, async (req, res) => {
   try {
     // Only allow business owners to see subscription plans
@@ -23,20 +24,35 @@ router.get('/plans', protect, async (req, res) => {
       }
     }
 
+    // Build where clause with optional billing cycle filter
+    const whereClause = { isActive: true };
+    if (req.query.billingCycle && ['MONTHLY', 'YEARLY'].includes(req.query.billingCycle.toUpperCase())) {
+      whereClause.billingCycle = req.query.billingCycle.toUpperCase();
+    }
+
     // Use try-catch to handle missing columns gracefully if migration hasn't been run
     let plans;
     try {
       plans = await SubscriptionPlan.findAll({
-        where: { isActive: true },
+        where: whereClause,
         order: [['displayOrder', 'ASC'], ['price', 'ASC']],
         attributes: ['id', 'name', 'tier', 'price', 'billingCycle', 'description', 'features', 'leadDiscountPercent', 'priorityBoostPoints', 'isFeatured', 'hasAdvancedAnalytics', 'maxLeadsPerMonth']
       });
+
+      // Debug logging
+      console.log(`📋 Found ${plans.length} active subscription plan(s)`);
+      const monthlyCount = plans.filter(p => p.billingCycle === 'MONTHLY').length;
+      const yearlyCount = plans.filter(p => p.billingCycle === 'YEARLY').length;
+      console.log(`  - Monthly: ${monthlyCount}, Annual: ${yearlyCount}`);
+      if (yearlyCount === 0 && !req.query.billingCycle) {
+        console.log('⚠️  No annual plans found in database. Run: node backend/scripts/add-annual-plans.js');
+      }
     } catch (dbError) {
       // If error is about missing columns, try with explicit attributes (migration not run yet)
       if (dbError.message && dbError.message.includes('Unknown column')) {
         console.log('Migration not run yet, using explicit attributes for subscription plans...');
         plans = await SubscriptionPlan.findAll({
-          where: { isActive: true },
+          where: whereClause,
           order: [['displayOrder', 'ASC'], ['price', 'ASC']],
           attributes: ['id', 'name', 'tier', 'price', 'billingCycle', 'description', 'features', 'leadDiscountPercent', 'priorityBoostPoints', 'isFeatured', 'hasAdvancedAnalytics']
         });

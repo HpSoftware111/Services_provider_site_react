@@ -425,7 +425,7 @@ const MyRequests = () => {
                     type: 'error',
                     text: 'Please provide a description when selecting "Other" as the rejection reason'
                 });
-                return;
+            return;
             }
         }
 
@@ -985,18 +985,18 @@ const MyRequests = () => {
                                                     );
 
                                                     return (
-                                                        <div key={index} className="provider-card">
-                                                            <div className="provider-info">
-                                                                <h4>{provider.name}</h4>
+                                                    <div key={index} className="provider-card">
+                                                        <div className="provider-info">
+                                                            <h4>{provider.name}</h4>
                                                                 {/* Only show contact info if provider has an accepted proposal */}
                                                                 {hasAcceptedProposal && provider.email && (
-                                                                    <p><i className="fas fa-envelope"></i> {provider.email}</p>
-                                                                )}
+                                                                <p><i className="fas fa-envelope"></i> {provider.email}</p>
+                                                            )}
                                                                 {hasAcceptedProposal && provider.phone && (
-                                                                    <p><i className="fas fa-phone"></i> {provider.phone}</p>
-                                                                )}
-                                                            </div>
+                                                                <p><i className="fas fa-phone"></i> {provider.phone}</p>
+                                                            )}
                                                         </div>
+                                                    </div>
                                                     );
                                                 })}
                                             </div>
