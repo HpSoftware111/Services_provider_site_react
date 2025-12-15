@@ -24,6 +24,7 @@ const webhookRoutes = require('./routes/webhooks');
 const providerRoutes = require('./routes/provider');
 const subscriptionRoutes = require('./routes/subscriptions');
 const phoneVerificationRoutes = require('./routes/phone-verification');
+const scheduledTasksRoutes = require('./routes/scheduled-tasks');
 
 // Initialize Express app
 const app = express();
@@ -125,6 +126,7 @@ app.use('/api/webhooks', webhookRoutes);
 app.use('/api/provider', providerRoutes);
 app.use('/api/subscriptions', subscriptionRoutes);
 app.use('/api/phone-verification', phoneVerificationRoutes);
+app.use('/api/scheduled-tasks', scheduledTasksRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {

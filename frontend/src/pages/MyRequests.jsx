@@ -849,8 +849,12 @@ const MyRequests = () => {
                                                                 {proposal.createdAt && (
                                                                     <span><i className="fas fa-calendar"></i> {formatDate(proposal.createdAt)}</span>
                                                                 )}
-                                                                {proposal.provider?.email && (
+                                                                {/* Only show provider contact info after proposal is accepted */}
+                                                                {proposal.status === 'ACCEPTED' && proposal.provider?.email && (
                                                                     <span><i className="fas fa-envelope"></i> {proposal.provider.email}</span>
+                                                                )}
+                                                                {proposal.status === 'ACCEPTED' && proposal.provider?.phone && (
+                                                                    <span><i className="fas fa-phone"></i> {proposal.provider.phone}</span>
                                                                 )}
                                                             </div>
                                                             {/* Show Accept/Reject buttons for SENT proposals when status allows */}
@@ -954,9 +958,6 @@ const MyRequests = () => {
                                                             {lead.business && (
                                                                 <p><i className="fas fa-building"></i> {lead.business.name}</p>
                                                             )}
-                                                            {lead.provider?.email && (
-                                                                <p><i className="fas fa-envelope"></i> {lead.provider.email}</p>
-                                                            )}
                                                             {lead.rejectedAt && (
                                                                 <p className="rejected-date">
                                                                     <i className="fas fa-clock"></i> Declined on {formatDate(lead.rejectedAt)}
@@ -977,19 +978,27 @@ const MyRequests = () => {
                                                 Alternative Providers ({selectedRequest.alternativeProviders.length})
                                             </h3>
                                             <div className="providers-list">
-                                                {selectedRequest.alternativeProviders.map((provider, index) => (
-                                                    <div key={index} className="provider-card">
-                                                        <div className="provider-info">
-                                                            <h4>{provider.name}</h4>
-                                                            {provider.email && (
-                                                                <p><i className="fas fa-envelope"></i> {provider.email}</p>
-                                                            )}
-                                                            {provider.phone && (
-                                                                <p><i className="fas fa-phone"></i> {provider.phone}</p>
-                                                            )}
+                                                {selectedRequest.alternativeProviders.map((provider, index) => {
+                                                    // Check if this provider has an accepted proposal
+                                                    const hasAcceptedProposal = selectedRequest.proposals?.some(
+                                                        p => p.provider?.id === provider.id && p.status === 'ACCEPTED'
+                                                    );
+
+                                                    return (
+                                                        <div key={index} className="provider-card">
+                                                            <div className="provider-info">
+                                                                <h4>{provider.name}</h4>
+                                                                {/* Only show contact info if provider has an accepted proposal */}
+                                                                {hasAcceptedProposal && provider.email && (
+                                                                    <p><i className="fas fa-envelope"></i> {provider.email}</p>
+                                                                )}
+                                                                {hasAcceptedProposal && provider.phone && (
+                                                                    <p><i className="fas fa-phone"></i> {provider.phone}</p>
+                                                                )}
+                                                            </div>
                                                         </div>
-                                                    </div>
-                                                ))}
+                                                    );
+                                                })}
                                             </div>
                                         </div>
                                     )}

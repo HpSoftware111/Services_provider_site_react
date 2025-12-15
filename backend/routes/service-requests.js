@@ -724,7 +724,7 @@ router.get('/my/service-requests/:id', protect, async (req, res) => {
                     {
                         model: User,
                         as: 'provider',
-                        attributes: ['id', 'name', 'email'],
+                        attributes: ['id', 'name', 'email', 'phone'],
                         required: false,
                         include: [{
                             model: ProviderProfile,
@@ -760,7 +760,7 @@ router.get('/my/service-requests/:id', protect, async (req, res) => {
                         {
                             model: User,
                             as: 'provider',
-                            attributes: ['id', 'name', 'email'],
+                            attributes: ['id', 'name', 'email', 'phone'],
                             required: false,
                             include: [{
                                 model: ProviderProfile,
@@ -799,7 +799,8 @@ router.get('/my/service-requests/:id', protect, async (req, res) => {
                             provider: lead.provider ? {
                                 id: lead.provider.id,
                                 name: lead.provider.name,
-                                email: lead.provider.email
+                                email: lead.provider.email,
+                                phone: lead.provider.phone || null
                             } : null,
                             business: lead.business ? {
                                 id: lead.business.id,
@@ -843,6 +844,8 @@ router.get('/my/service-requests/:id', protect, async (req, res) => {
                             }
 
                             // Create proposal object from lead metadata
+                            // Only show provider contact info if proposal is ACCEPTED
+                            const isAccepted = proposalStatus === 'ACCEPTED';
                             serviceRequestProposals.push({
                                 id: `pending-${lead.id}`, // Temporary ID
                                 details: pendingProposal.description || '',
@@ -855,7 +858,8 @@ router.get('/my/service-requests/:id', protect, async (req, res) => {
                                 provider: lead.provider ? {
                                     id: lead.provider.id,
                                     name: lead.provider.name || 'Provider',
-                                    email: lead.provider.email || null
+                                    email: isAccepted ? (lead.provider.email || null) : null,
+                                    phone: null // Phone not available from lead metadata
                                 } : null,
                                 createdAt: lead.updatedAt || new Date() // Use lead update time
                             });
@@ -901,7 +905,7 @@ router.get('/my/service-requests/:id', protect, async (req, res) => {
                     include: [{
                         model: User,
                         as: 'user',
-                        attributes: ['id', 'name', 'email'],
+                        attributes: ['id', 'name', 'email', 'phone'],
                         required: false
                     }],
                     required: false
@@ -981,6 +985,8 @@ router.get('/my/service-requests/:id', protect, async (req, res) => {
                 }
             }
 
+            // Only show provider contact info if proposal is ACCEPTED
+            const isAccepted = (proposal.status || 'SENT') === 'ACCEPTED';
             const proposalData = {
                 id: proposal.id,
                 details: proposal.details || '',
@@ -993,11 +999,13 @@ router.get('/my/service-requests/:id', protect, async (req, res) => {
                 provider: proposal.provider?.user ? {
                     id: proposal.provider.user.id,
                     name: proposal.provider.user.name || 'Provider',
-                    email: proposal.provider.user.email || null
+                    email: isAccepted ? (proposal.provider.user.email || null) : null,
+                    phone: isAccepted ? (proposal.provider.user.phone || null) : null
                 } : (proposal.provider ? {
                     id: proposal.provider.id,
                     name: 'Provider',
-                    email: null
+                    email: null,
+                    phone: null
                 } : null),
                 createdAt: proposal.createdAt || new Date()
             };
@@ -1018,13 +1026,23 @@ router.get('/my/service-requests/:id', protect, async (req, res) => {
         console.log(`[Get Request Details] Total proposals formatted: ${serviceRequestProposals.length}`);
 
         // Format alternative providers from leads
+        // Only show provider contact info if their proposal has been ACCEPTED
         const alternativeProviders = serviceRequestLeads
             .filter(lead => lead.status === 'accepted' && lead.provider)
-            .map(lead => ({
-                id: lead.provider.id,
-                name: lead.provider.name,
-                email: lead.provider.email
-            }));
+            .map(lead => {
+                // Check if there's an accepted proposal from this provider
+                const providerProposal = serviceRequestProposals.find(
+                    p => p.provider?.id === lead.provider.id && p.status === 'ACCEPTED'
+                );
+                const isAccepted = !!providerProposal;
+
+                return {
+                    id: lead.provider.id,
+                    name: lead.provider.name,
+                    email: isAccepted ? (lead.provider.email || null) : null,
+                    phone: isAccepted ? (lead.provider.phone || null) : null
+                };
+            });
 
         // Parse attachments and selectedBusinessIds if they're strings
         let attachments = serviceRequest.attachments;
@@ -4402,28 +4420,33 @@ router.get('/:id/proposals', protect, async (req, res) => {
             throw error;
         });
 
-        const formattedProposals = proposals.map(proposal => ({
-            id: proposal.id,
-            details: proposal.details,
-            price: parseFloat(proposal.price),
-            status: proposal.status,
-            paymentStatus: proposal.paymentStatus,
-            paidAt: proposal.paidAt,
-            providerPayoutAmount: proposal.providerPayoutAmount ? parseFloat(proposal.providerPayoutAmount) : null,
-            platformFeeAmount: proposal.platformFeeAmount ? parseFloat(proposal.platformFeeAmount) : null,
-            payoutStatus: proposal.payoutStatus || null,
-            payoutProcessedAt: proposal.payoutProcessedAt || null,
-            provider: proposal.provider?.user ? {
-                id: proposal.provider.user.id,
-                name: proposal.provider.user.firstName && proposal.provider.user.lastName
-                    ? `${proposal.provider.user.firstName} ${proposal.provider.user.lastName}`
-                    : proposal.provider.user.name,
-                email: proposal.provider.user.email,
-                avatar: proposal.provider.user.avatar
-            } : null,
-            createdAt: proposal.createdAt,
-            updatedAt: proposal.updatedAt
-        }));
+        // Only show provider contact info if proposal is ACCEPTED
+        const formattedProposals = proposals.map(proposal => {
+            const isAccepted = (proposal.status || 'SENT') === 'ACCEPTED';
+            return {
+                id: proposal.id,
+                details: proposal.details,
+                price: parseFloat(proposal.price),
+                status: proposal.status,
+                paymentStatus: proposal.paymentStatus,
+                paidAt: proposal.paidAt,
+                providerPayoutAmount: proposal.providerPayoutAmount ? parseFloat(proposal.providerPayoutAmount) : null,
+                platformFeeAmount: proposal.platformFeeAmount ? parseFloat(proposal.platformFeeAmount) : null,
+                payoutStatus: proposal.payoutStatus || null,
+                payoutProcessedAt: proposal.payoutProcessedAt || null,
+                provider: proposal.provider?.user ? {
+                    id: proposal.provider.user.id,
+                    name: proposal.provider.user.firstName && proposal.provider.user.lastName
+                        ? `${proposal.provider.user.firstName} ${proposal.provider.user.lastName}`
+                        : proposal.provider.user.name,
+                    email: isAccepted ? (proposal.provider.user.email || null) : null,
+                    phone: isAccepted ? (proposal.provider.user.phone || null) : null,
+                    avatar: proposal.provider.user.avatar
+                } : null,
+                createdAt: proposal.createdAt,
+                updatedAt: proposal.updatedAt
+            };
+        });
 
         res.json({
             success: true,

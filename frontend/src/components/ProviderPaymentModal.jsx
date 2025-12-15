@@ -12,7 +12,7 @@ import './PaymentModal.css';
 // Initialize Stripe
 const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY || 'pk_test_placeholder');
 
-const ProviderPaymentForm = ({ lead, leadCost, clientSecret, paymentIntentId, onSuccess, onError, onClose }) => {
+const ProviderPaymentForm = ({ lead, leadCost, clientSecret, paymentIntentId, pendingProposal, onSuccess, onError, onClose }) => {
     const stripe = useStripe();
     const elements = useElements();
     const [processing, setProcessing] = useState(false);
@@ -21,7 +21,7 @@ const ProviderPaymentForm = ({ lead, leadCost, clientSecret, paymentIntentId, on
     const handleSubmit = async (event) => {
         event.preventDefault();
 
-        if (!stripe || !elements || !clientSecret) {
+        if (!stripe || !elements) {
             setError('Payment system not ready. Please wait a moment and try again.');
             return;
         }
@@ -42,6 +42,41 @@ const ProviderPaymentForm = ({ lead, leadCost, clientSecret, paymentIntentId, on
             // Validate zip code before proceeding
             if (!zipCode || zipCode.length < 5) {
                 setError('Please ensure the lead has a valid zip code (5 digits).');
+                setProcessing(false);
+                return;
+            }
+
+            // If we have pending proposal but no clientSecret, create payment method and accept lead
+            if (pendingProposal && !clientSecret) {
+                // Create payment method
+                const { error: pmError, paymentMethod } = await stripe.createPaymentMethod({
+                    type: 'card',
+                    card: cardElement,
+                    billing_details: {
+                        name: lead?.serviceRequest?.projectTitle || 'Lead Acceptance',
+                        address: {
+                            postal_code: zipCode
+                        }
+                    }
+                });
+
+                if (pmError) {
+                    setError(pmError.message || 'Failed to create payment method. Please try again.');
+                    setProcessing(false);
+                    return;
+                }
+
+                // Trigger lead acceptance with payment method
+                onSuccess({
+                    paymentMethodId: paymentMethod.id,
+                    pendingProposal: pendingProposal
+                });
+                return;
+            }
+
+            // If we have clientSecret, confirm payment
+            if (!clientSecret) {
+                setError('Payment information not available. Please try again.');
                 setProcessing(false);
                 return;
             }
@@ -147,7 +182,10 @@ const ProviderPaymentForm = ({ lead, leadCost, clientSecret, paymentIntentId, on
                 <button
                     type="submit"
                     className="btn-primary"
-                    disabled={!stripe || processing || !clientSecret}
+                    // Enable when Stripe is ready and either we have a clientSecret
+                    // (normal payment confirmation) OR a pendingProposal (lead-accept flow
+                    // where we first create a payment method).
+                    disabled={!stripe || processing || (!clientSecret && !pendingProposal)}
                 >
                     {processing ? (
                         <>
@@ -166,12 +204,19 @@ const ProviderPaymentForm = ({ lead, leadCost, clientSecret, paymentIntentId, on
     );
 };
 
-const ProviderPaymentModal = ({ show, onClose, lead, leadCost, clientSecret, paymentIntentId, onSuccess }) => {
+const ProviderPaymentModal = ({ show, onClose, lead, leadCost, clientSecret, paymentIntentId, pendingProposal, onSuccess }) => {
     const [success, setSuccess] = useState(false);
 
     if (!show) return null;
 
     const handleSuccess = (data) => {
+        // If payment method was created, don't show success screen - let parent handle it
+        if (data.paymentMethodId && data.pendingProposal) {
+            onSuccess(data);
+            return;
+        }
+
+        // Otherwise, show success screen for completed payment
         setSuccess(true);
         setTimeout(() => {
             onSuccess(data);
@@ -210,6 +255,7 @@ const ProviderPaymentModal = ({ show, onClose, lead, leadCost, clientSecret, pay
                                 leadCost={leadCost}
                                 clientSecret={clientSecret}
                                 paymentIntentId={paymentIntentId}
+                                pendingProposal={pendingProposal}
                                 onSuccess={handleSuccess}
                                 onError={handleError}
                                 onClose={onClose}

@@ -17,7 +17,7 @@ L.Icon.Default.mergeOptions({
 
 const ServiceRequest = () => {
     const navigate = useNavigate();
-    const { user } = useContext(AuthContext);
+    const { user, checkAuth } = useContext(AuthContext);
     const [currentStep, setCurrentStep] = useState(1);
     const [categories, setCategories] = useState([]);
     const [subCategories, setSubCategories] = useState([]);
@@ -34,6 +34,16 @@ const ServiceRequest = () => {
     const [businessDetailLoading, setBusinessDetailLoading] = useState(false);
     const [monthlyUsage, setMonthlyUsage] = useState(null);
     const [usageLoading, setUsageLoading] = useState(false);
+    const [phoneVerification, setPhoneVerification] = useState({
+        phone: user?.phone || '',
+        code: '',
+        checked: false,
+        verified: false,
+        sending: false,
+        verifying: false,
+        error: '',
+        info: ''
+    });
     const [formData, setFormData] = useState({
         categoryId: '',
         subCategoryId: '',
@@ -54,17 +64,50 @@ const ServiceRequest = () => {
     }, []);
 
     const loadMonthlyUsage = async () => {
-        try {
-            setUsageLoading(true);
-            const response = await api.get('/subscriptions/monthly-usage');
-            setMonthlyUsage(response.data.usage);
-        } catch (error) {
-            console.error('Error loading monthly usage:', error);
-            // Don't show error to user, just continue
-        } finally {
-            setUsageLoading(false);
-        }
+        // Membership / monthly limits apply only to providers accepting leads,
+        // NOT to customers submitting service requests.
+        // For customer-facing ServiceRequest page we treat usage as unlimited.
+        setMonthlyUsage(null);
+        setUsageLoading(false);
     };
+
+    // Check if a given phone number is already verified for the current user
+    async function checkPhoneVerification(phoneToCheck) {
+        if (!phoneToCheck) {
+            setPhoneVerification(prev => ({
+                ...prev,
+                checked: true,
+                verified: false,
+                info: '',
+                error: ''
+            }));
+            return;
+        }
+        try {
+            const res = await api.get('/phone-verification/check-verification', {
+                params: { phone: phoneToCheck }
+            });
+            const verified = !!res.data?.verified;
+            setPhoneVerification(prev => ({
+                ...prev,
+                checked: true,
+                verified,
+                error: '',
+                info: verified
+                    ? 'Your phone number is verified.'
+                    : 'Your phone number is not verified. Please request a code and verify it before submitting.'
+            }));
+        } catch (err) {
+            console.error('Error checking phone verification:', err);
+            setPhoneVerification(prev => ({
+                ...prev,
+                checked: true,
+                verified: false,
+                error: 'Could not check phone verification. Please try again.',
+                info: ''
+            }));
+        }
+    }
 
     useEffect(() => {
         if (formData.categoryId && categories.length > 0) {
@@ -78,6 +121,16 @@ const ServiceRequest = () => {
             setSubCategories([]);
         }
     }, [formData.categoryId, categories]);
+
+    // When entering the booking step, ensure we know the current verification status
+    useEffect(() => {
+        if (currentStep === 5 && !phoneVerification.checked) {
+            const phoneToCheck = phoneVerification.phone || user?.phone || '';
+            if (phoneToCheck) {
+                checkPhoneVerification(phoneToCheck);
+            }
+        }
+    }, [currentStep, phoneVerification.checked, phoneVerification.phone, user]);
 
     // Load businesses when zip code, category, or subcategory changes on step 3
     useEffect(() => {
@@ -94,11 +147,6 @@ const ServiceRequest = () => {
             // Add cache-busting parameter to ensure fresh data
             const response = await api.get(`/service-requests/categories/all?t=${Date.now()}`);
             const categoriesData = response.data.categories || [];
-            console.log('=== CATEGORIES LOADED ===');
-            categoriesData.forEach(cat => {
-                console.log(`${cat.name}: icon="${cat.icon}" (type: ${typeof cat.icon})`);
-            });
-            console.log('========================');
             setCategories(categoriesData);
         } catch (error) {
             console.error('Error loading categories:', error);
@@ -188,13 +236,6 @@ const ServiceRequest = () => {
                 if (business.longitude !== null && business.longitude !== undefined) {
                     business.longitude = parseFloat(business.longitude);
                 }
-                console.log('Business detail loaded:', {
-                    id: business.id,
-                    name: business.name,
-                    latitude: business.latitude,
-                    longitude: business.longitude,
-                    hasCoordinates: !!(business.latitude && business.longitude)
-                });
                 setSelectedBusinessDetail(business);
             } else {
                 setMessage({
@@ -218,6 +259,120 @@ const ServiceRequest = () => {
     const closeBusinessModal = () => {
         setShowBusinessModal(false);
         setSelectedBusinessDetail(null);
+    };
+
+    // --- Phone verification handlers ---
+    const handlePhoneChange = (e) => {
+        const value = e.target.value;
+        setPhoneVerification(prev => ({
+            ...prev,
+            phone: value,
+            code: '',
+            verified: false,
+            checked: false,
+            error: '',
+            info: ''
+        }));
+    };
+
+    const handleSendVerificationCode = async () => {
+        const phone = phoneVerification.phone.trim();
+        if (!phone) {
+            setPhoneVerification(prev => ({
+                ...prev,
+                error: 'Please enter your phone number before requesting a verification code.',
+                info: ''
+            }));
+            return;
+        }
+
+        setPhoneVerification(prev => ({
+            ...prev,
+            sending: true,
+            error: '',
+            info: ''
+        }));
+
+        try {
+            await api.post('/phone-verification/send-code', { phone });
+            setPhoneVerification(prev => ({
+                ...prev,
+                sending: false,
+                checked: false,
+                verified: false,
+                info: 'Verification code sent. Please check your email or SMS and enter the 6-digit code below.',
+                error: ''
+            }));
+        } catch (err) {
+            console.error('Error sending verification code:', err);
+            setPhoneVerification(prev => ({
+                ...prev,
+                sending: false,
+                error: err.response?.data?.error || 'Failed to send verification code. Please try again.',
+                info: ''
+            }));
+        }
+    };
+
+    const handleVerifyCode = async () => {
+        const phone = phoneVerification.phone.trim();
+        const code = phoneVerification.code.trim();
+
+        if (!phone) {
+            setPhoneVerification(prev => ({
+                ...prev,
+                error: 'Please enter your phone number before verifying.',
+                info: ''
+            }));
+            return;
+        }
+
+        if (!code) {
+            setPhoneVerification(prev => ({
+                ...prev,
+                error: 'Please enter the verification code you received.',
+                info: ''
+            }));
+            return;
+        }
+
+        setPhoneVerification(prev => ({
+            ...prev,
+            verifying: true,
+            error: '',
+            info: ''
+        }));
+
+        try {
+            await api.post('/phone-verification/verify-code', { phone, code });
+            // Refresh user data so phone is up to date
+            if (typeof checkAuth === 'function') {
+                try {
+                    await checkAuth();
+                } catch (e) {
+                    // non-critical if this fails
+                    console.warn('checkAuth after phone verification failed:', e);
+                }
+            }
+            setPhoneVerification(prev => ({
+                ...prev,
+                verifying: false,
+                verified: true,
+                checked: true,
+                error: '',
+                info: 'Your phone number has been verified successfully.'
+            }));
+        } catch (err) {
+            console.error('Error verifying phone code:', err);
+            setPhoneVerification(prev => ({
+                ...prev,
+                verifying: false,
+                verified: false,
+                checked: true,
+                error: err.response?.data?.error || 'Invalid or expired verification code. Please try again.',
+                info: ''
+            }));
+        }
     };
 
     const formatDate = (dateString) => {
@@ -468,6 +623,26 @@ const ServiceRequest = () => {
         setLoading(true);
         setMessage({ type: '', text: '' });
 
+        // Ensure phone number is present and verified before allowing submission
+        const phoneToUse = (phoneVerification.phone || user?.phone || '').trim();
+        if (!phoneToUse) {
+            setMessage({
+                type: 'error',
+                text: 'Please enter your phone number and complete phone verification before submitting your request.'
+            });
+            setLoading(false);
+            return;
+        }
+
+        if (!phoneVerification.verified) {
+            setMessage({
+                type: 'error',
+                text: 'Please verify your phone number before submitting your service request.'
+            });
+            setLoading(false);
+            return;
+        }
+
         // Validate all steps before submission (including step 5 - booking date)
         let isValid = true;
         for (let step = 1; step <= 5; step++) {
@@ -498,15 +673,9 @@ const ServiceRequest = () => {
             return;
         }
 
-        // Check monthly limit before submitting
-        if (monthlyUsage && !monthlyUsage.isUnlimited && monthlyUsage.currentCount >= monthlyUsage.maxLimit) {
-            setMessage({
-                type: 'error',
-                text: `You have reached your monthly limit of ${monthlyUsage.maxLimit} service requests for ${monthlyUsage.planName}. Please upgrade your plan or wait until next month.`
-            });
-            setLoading(false);
-            return;
-        }
+        // NOTE: We DO NOT enforce any monthly limit for customers here.
+        // Membership is only for providers accepting leads, so customers
+        // can submit unlimited service requests.
 
         try {
             // Convert file objects to base64 or prepare for upload
@@ -537,34 +706,21 @@ const ServiceRequest = () => {
                 attachments: attachmentsData
             };
 
-            const response = await api.post('/service-requests', submitData);
+            await api.post('/service-requests', submitData);
 
             setMessage({
                 type: 'success',
                 text: 'Service request submitted successfully! We will connect you with providers soon.'
             });
 
-            // Reload usage after successful submission
-            await loadMonthlyUsage();
-
             setTimeout(() => {
                 navigate('/user-dashboard');
             }, 2000);
         } catch (error) {
-            // Check if it's a limit error
-            if (error.response?.data?.limitReached) {
-                setMessage({
-                    type: 'error',
-                    text: error.response.data.error
-                });
-                // Reload usage to show updated count
-                await loadMonthlyUsage();
-            } else {
-                setMessage({
-                    type: 'error',
-                    text: error.response?.data?.error || 'Failed to submit service request'
-                });
-            }
+            setMessage({
+                type: 'error',
+                text: error.response?.data?.error || 'Failed to submit service request'
+            });
         } finally {
             setLoading(false);
         }
@@ -956,6 +1112,74 @@ const ServiceRequest = () => {
                     <div className="step-content">
                         <h2>Booking Date</h2>
                         <p className="step-description">Select your preferred date and time for the service</p>
+                        {/* Phone verification section */}
+                        <div className="form-group">
+                            <h3>Phone Verification</h3>
+                            <p className="step-description">
+                                We require a verified phone number so providers can contact you about this request.
+                            </p>
+                            <label htmlFor="customerPhone">Phone Number *</label>
+                            <input
+                                type="tel"
+                                id="customerPhone"
+                                name="customerPhone"
+                                value={phoneVerification.phone}
+                                onChange={handlePhoneChange}
+                                placeholder="Enter your mobile number"
+                                disabled={phoneVerification.sending || phoneVerification.verifying}
+                            />
+                            {phoneVerification.error && (
+                                <div className="field-error">
+                                    <i className="fas fa-exclamation-circle"></i>
+                                    <span>{phoneVerification.error}</span>
+                                </div>
+                            )}
+                            {phoneVerification.info && !phoneVerification.error && (
+                                <div className="field-info">
+                                    <i className="fas fa-info-circle"></i>
+                                    <span>{phoneVerification.info}</span>
+                                </div>
+                            )}
+                            <div className="phone-verification-actions" style={{ marginTop: '8px', marginBottom: '8px' }}>
+                                <button
+                                    type="button"
+                                    className="btn-secondary"
+                                    onClick={handleSendVerificationCode}
+                                    disabled={phoneVerification.sending || !phoneVerification.phone}
+                                >
+                                    {phoneVerification.sending ? 'Sending code...' : 'Send verification code'}
+                                </button>
+                            </div>
+                            <div className="form-group" style={{ marginTop: '8px' }}>
+                                <label htmlFor="verificationCode">Verification Code</label>
+                                <input
+                                    type="text"
+                                    id="verificationCode"
+                                    name="verificationCode"
+                                    value={phoneVerification.code}
+                                    onChange={(e) =>
+                                        setPhoneVerification(prev => ({ ...prev, code: e.target.value }))
+                                    }
+                                    placeholder="Enter the 6-digit code"
+                                    disabled={phoneVerification.verifying}
+                                />
+                                <button
+                                    type="button"
+                                    className="btn-primary"
+                                    style={{ marginTop: '8px' }}
+                                    onClick={handleVerifyCode}
+                                    disabled={phoneVerification.verifying || !phoneVerification.code}
+                                >
+                                    {phoneVerification.verifying ? 'Verifying...' : 'Verify code'}
+                                </button>
+                            </div>
+                            {phoneVerification.verified && (
+                                <div className="field-success" style={{ marginTop: '8px' }}>
+                                    <i className="fas fa-check-circle"></i>
+                                    <span>Your phone number is verified.</span>
+                                </div>
+                            )}
+                        </div>
                         <div className="form-group">
                             <label htmlFor="preferredDate">Preferred Date *</label>
                             <input
@@ -1063,56 +1287,7 @@ const ServiceRequest = () => {
     return (
         <div className="service-request-page">
             <div className="container">
-                {monthlyUsage && (
-                    <div className="monthly-usage-banner" style={{
-                        padding: '12px 20px',
-                        marginBottom: '20px',
-                        borderRadius: '8px',
-                        backgroundColor: monthlyUsage.isUnlimited
-                            ? '#e7f3ff'
-                            : monthlyUsage.currentCount >= monthlyUsage.maxLimit
-                                ? '#fff3cd'
-                                : '#d4edda',
-                        border: `1px solid ${monthlyUsage.isUnlimited
-                            ? '#b3d9ff'
-                            : monthlyUsage.currentCount >= monthlyUsage.maxLimit
-                                ? '#ffc107'
-                                : '#c3e6cb'}`,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        flexWrap: 'wrap',
-                        gap: '10px'
-                    }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                            <i className={`fas ${monthlyUsage.isUnlimited ? 'fa-infinity' : 'fa-chart-line'}`}
-                                style={{ color: monthlyUsage.isUnlimited ? '#007bff' : monthlyUsage.currentCount >= monthlyUsage.maxLimit ? '#856404' : '#155724' }}></i>
-                            <span style={{
-                                fontWeight: '500',
-                                color: monthlyUsage.isUnlimited ? '#004085' : monthlyUsage.currentCount >= monthlyUsage.maxLimit ? '#856404' : '#155724'
-                            }}>
-                                {monthlyUsage.isUnlimited
-                                    ? `Unlimited service requests (${monthlyUsage.currentCount} this month)`
-                                    : `${monthlyUsage.currentCount} / ${monthlyUsage.maxLimit} service requests used this month`
-                                }
-                            </span>
-                        </div>
-                        {!monthlyUsage.isUnlimited && monthlyUsage.currentCount >= monthlyUsage.maxLimit && (
-                            <a href="/user-dashboard/subscriptions"
-                                style={{
-                                    padding: '6px 16px',
-                                    backgroundColor: '#007bff',
-                                    color: 'white',
-                                    borderRadius: '4px',
-                                    textDecoration: 'none',
-                                    fontSize: '14px',
-                                    fontWeight: '500'
-                                }}>
-                                Upgrade Plan
-                            </a>
-                        )}
-                    </div>
-                )}
+                {/* No monthly usage banner here for customers; they can submit unlimited requests */}
                 <div className="page-header">
                     <h1>Request a Service</h1>
                     <p>Follow the steps below to submit your service request</p>
@@ -1164,14 +1339,24 @@ const ServiceRequest = () => {
                                     <i className="fas fa-arrow-right"></i>
                                 </button>
                             ) : (
-                                <button type="button" onClick={handleSubmit} className="btn-primary" disabled={loading}>
+                                <button
+                                    type="button"
+                                    onClick={handleSubmit}
+                                    className="btn-primary"
+                                    disabled={loading || !phoneVerification.verified}
+                                >
                                     {loading ? (
                                         <>
                                             <i className="fas fa-spinner fa-spin"></i> <span>Submitting...</span>
                                         </>
                                     ) : (
                                         <>
-                                            <i className="fas fa-paper-plane"></i> <span>Submit Request</span>
+                                            <i className="fas fa-paper-plane"></i>{' '}
+                                            <span>
+                                                {phoneVerification.verified
+                                                    ? 'Submit Request'
+                                                    : 'Verify Phone to Submit'}
+                                            </span>
                                         </>
                                     )}
                                 </button>

@@ -35,7 +35,7 @@ import AdminServiceRequests from './pages/admin/AdminServiceRequests';
 import AdminLeads from './pages/admin/AdminLeads';
 import AdminProposals from './pages/admin/AdminProposals';
 import AdminWorkOrders from './pages/admin/AdminWorkOrders';
-import AdminProviderProfiles from './pages/admin/AdminProviderProfiles';
+import AdminProviders from './pages/admin/AdminProviders';
 import AdminLogin from './pages/admin/AdminLogin';
 import MyBusiness from './pages/MyBusiness';
 import BusinessInformation from './pages/BusinessInformation';
@@ -78,7 +78,7 @@ function App() {
                   <Route path="leads" element={<AdminLeads />} />
                   <Route path="proposals" element={<AdminProposals />} />
                   <Route path="work-orders" element={<AdminWorkOrders />} />
-                  <Route path="provider-profiles" element={<AdminProviderProfiles />} />
+                  <Route path="providers" element={<AdminProviders />} />
                   <Route path="blogs" element={<AdminBlogs />} />
                   <Route path="contacts" element={<AdminContacts />} />
                   <Route path="activities" element={<AdminActivities />} />

@@ -34,8 +34,8 @@ const AccountSettings = () => {
   // Scroll error into view when it appears
   useEffect(() => {
     if (message.text && messageRef.current) {
-      messageRef.current.scrollIntoView({ 
-        behavior: 'smooth', 
+      messageRef.current.scrollIntoView({
+        behavior: 'smooth',
         block: 'center',
         inline: 'nearest'
       });
@@ -45,8 +45,8 @@ const AccountSettings = () => {
   // Scroll password error into view when it appears
   useEffect(() => {
     if (passwordError && passwordErrorRef.current) {
-      passwordErrorRef.current.scrollIntoView({ 
-        behavior: 'smooth', 
+      passwordErrorRef.current.scrollIntoView({
+        behavior: 'smooth',
         block: 'center',
         inline: 'nearest'
       });
@@ -74,13 +74,13 @@ const AccountSettings = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     e.stopPropagation();
-    
+
     // Prevent form reset
     const form = e.target;
     if (form) {
-      form.reset = () => {}; // Disable form reset
+      form.reset = () => { }; // Disable form reset
     }
-    
+
     setLoading(true);
     setMessage({ type: '', text: '' });
 
@@ -93,10 +93,10 @@ const AccountSettings = () => {
       // CRITICAL: Preserve form data - never reset it on error
       e?.preventDefault?.();
       e?.stopPropagation?.();
-      
+
       const errorMsg = error.response?.data?.error || 'Failed to update profile';
-      setMessage({ 
-        type: 'error', 
+      setMessage({
+        type: 'error',
         text: errorMsg
       });
     } finally {
@@ -127,7 +127,7 @@ const AccountSettings = () => {
         await checkAuth();
         setTimeout(() => setMessage({ type: '', text: '' }), 3000);
       } catch (error) {
-        setMessage({ type: 'error', text: 'Failed to upload profile picture' });
+        setMessage({ type: 'error', text: error.response?.data?.error || 'Failed to upload profile picture' });
       } finally {
         setUploadingAvatar(false);
       }
@@ -138,13 +138,13 @@ const AccountSettings = () => {
   const handlePasswordChange = async (e) => {
     e.preventDefault();
     e.stopPropagation();
-    
+
     // Prevent form reset
     const form = e.target;
     if (form) {
-      form.reset = () => {}; // Disable form reset
+      form.reset = () => { }; // Disable form reset
     }
-    
+
     setLoading(true);
     setMessage({ type: '', text: '' });
     setPasswordError('');
@@ -167,7 +167,7 @@ const AccountSettings = () => {
         currentPassword: passwordData.currentPassword,
         newPassword: passwordData.newPassword
       });
-      
+
       // Only clear on success
       setMessage({ type: 'success', text: 'Password changed successfully!' });
       setShowPasswordModal(false);
@@ -180,10 +180,10 @@ const AccountSettings = () => {
       // Prevent any navigation or refresh
       e?.preventDefault?.();
       e?.stopPropagation?.();
-      
+
       const errorMsg = error.response?.data?.error || 'Failed to change password';
       const status = error.response?.status;
-      
+
       // Handle different error types
       if (status === 401) {
         // Current password is incorrect
@@ -196,9 +196,9 @@ const AccountSettings = () => {
       } else {
         setPasswordError(errorMsg);
       }
-      
-      setMessage({ 
-        type: 'error', 
+
+      setMessage({
+        type: 'error',
         text: errorMsg
       });
     } finally {
@@ -349,7 +349,7 @@ const AccountSettings = () => {
                 <h4>Change Password</h4>
                 <p>Update your account password</p>
               </div>
-              <button 
+              <button
                 type="button"
                 className="action-btn"
                 onClick={() => setShowPasswordModal(true)}
@@ -386,9 +386,9 @@ const AccountSettings = () => {
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h3><i className="fas fa-lock"></i> Change Password</h3>
-              <button 
+              <button
                 type="button"
-                className="modal-close" 
+                className="modal-close"
                 onClick={() => {
                   setShowPasswordModal(false);
                   setPasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' });

@@ -25,7 +25,7 @@ const AdminLayout = ({ children }) => {
     { path: '/admin/leads', icon: 'fas fa-bullhorn', label: 'Leads' },
     { path: '/admin/proposals', icon: 'fas fa-file-alt', label: 'Proposals' },
     { path: '/admin/work-orders', icon: 'fas fa-tasks', label: 'Work Orders' },
-    { path: '/admin/provider-profiles', icon: 'fas fa-user-cog', label: 'Provider Profiles' },
+    { path: '/admin/providers', icon: 'fas fa-users-cog', label: 'Providers' },
     { path: '/admin/blogs', icon: 'fas fa-blog', label: 'Blogs' },
     { path: '/admin/contacts', icon: 'fas fa-envelope', label: 'Contacts' },
     { path: '/admin/activities', icon: 'fas fa-history', label: 'Activities' },

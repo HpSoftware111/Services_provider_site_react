@@ -34,7 +34,9 @@ const ProviderLeads = () => {
     const [paymentData, setPaymentData] = useState({
         clientSecret: null,
         paymentIntentId: null,
-        leadCost: null
+        leadCost: null,
+        paymentMethodId: null,
+        pendingProposal: null
     });
     const [leadUsage, setLeadUsage] = useState({
         currentCount: 0,
@@ -142,51 +144,20 @@ const ProviderLeads = () => {
             return;
         }
 
-        setSubmitting(true);
-        try {
-            const response = await api.patch(`/provider/leads/${selectedLead.id}/accept`, {
+        // Store proposal data and show payment modal to collect payment method
+        // Payment will be charged automatically when provider submits payment method
+        setPaymentData({
+            clientSecret: null,
+            paymentIntentId: null,
+            leadCost: selectedLead.leadCost,
+            paymentMethodId: null,
+            pendingProposal: {
                 description: proposalData.description,
                 price: parseFloat(proposalData.price)
-            });
-            if (response.data.success) {
-                // Store payment data for payment modal
-                const cost = response.data.leadCost ? parseFloat(response.data.leadCost) : null;
-
-                // Close accept modal
-                setShowAcceptModal(false);
-
-                // If clientSecret is provided, show payment modal
-                if (response.data.clientSecret) {
-                    setPaymentData({
-                        clientSecret: response.data.clientSecret,
-                        paymentIntentId: response.data.paymentIntentId || null,
-                        leadCost: cost
-                    });
-                    setShowPaymentModal(true);
-                } else {
-                    // No payment required or payment already completed
-                    setSelectedLead(null);
-                    setProposalData({ description: '', price: '' });
-                    setLeadCost(null);
-                    await loadLeads();
-                    alert('Lead accepted successfully! Proposal sent to customer.');
-                }
             }
-        } catch (err) {
-            console.error('Error accepting lead:', err);
-            const errorMessage = err.response?.data?.error || 'Failed to accept lead';
-
-            // If limit reached, show upgrade message
-            if (err.response?.data?.limitReached) {
-                alert(`${errorMessage}\n\nPlease upgrade your plan to accept more leads.`);
-                // Reload lead usage stats
-                loadLeadUsage();
-            } else {
-                alert(errorMessage);
-            }
-        } finally {
-            setSubmitting(false);
-        }
+        });
+        setShowAcceptModal(false);
+        setShowPaymentModal(true);
     };
 
     const handleConfirmReject = async () => {
@@ -225,55 +196,102 @@ const ProviderLeads = () => {
     };
 
     const handlePaymentSuccess = async (data) => {
-        console.log('Payment successful:', data);
+        console.log('Payment success callback:', data);
 
-        // Store the lead ID before clearing
-        const paidLeadId = selectedLead?.id;
+        // If payment method was created, accept the lead with automatic charging
+        if (data.paymentMethodId && data.pendingProposal) {
+            setSubmitting(true);
+            try {
+                const response = await api.patch(`/provider/leads/${selectedLead.id}/accept`, {
+                    description: data.pendingProposal.description,
+                    price: data.pendingProposal.price,
+                    paymentMethodId: data.paymentMethodId
+                });
 
-        // Close payment modal
-        setShowPaymentModal(false);
-        setPaymentData({
-            clientSecret: null,
-            paymentIntentId: null,
-            leadCost: null
-        });
-
-        // Immediately update the lead status in local state to ACCEPTED if it's in the current list
-        if (selectedLead) {
-            setLeads(prevLeads =>
-                prevLeads.map(lead =>
-                    lead.id === selectedLead.id
-                        ? { ...lead, status: 'ACCEPTED', proposalPaymentStatus: 'succeeded' }
-                        : lead
-                )
-            );
+                if (response.data.success) {
+                    if (response.data.paymentSucceeded) {
+                        // Payment succeeded immediately - contact details are now visible
+                        setShowPaymentModal(false);
+                        setPaymentData({
+                            clientSecret: null,
+                            paymentIntentId: null,
+                            leadCost: null,
+                            paymentMethodId: null,
+                            pendingProposal: null
+                        });
+                        setSelectedLead(null);
+                        setProposalData({ description: '', price: '' });
+                        setLeadCost(null);
+                        await loadLeads();
+                        await loadLeadUsage();
+                        alert(`✅ Lead accepted and payment processed successfully!\n\nCustomer contact details are now available.`);
+                        setSubmitting(false);
+                        return;
+                    } else if (response.data.requiresAction) {
+                        // Payment requires action (3D Secure, etc.)
+                        setPaymentData({
+                            clientSecret: response.data.clientSecret,
+                            paymentIntentId: response.data.paymentIntentId,
+                            leadCost: response.data.leadCost ? parseFloat(response.data.leadCost) : null,
+                            paymentMethodId: data.paymentMethodId,
+                            pendingProposal: null
+                        });
+                        // Keep modal open for 3D Secure confirmation
+                        setSubmitting(false);
+                        return;
+                    } else if (response.data.processing) {
+                        // Payment is processing
+                        setPaymentData({
+                            clientSecret: response.data.clientSecret,
+                            paymentIntentId: response.data.paymentIntentId,
+                            leadCost: response.data.leadCost ? parseFloat(response.data.leadCost) : null,
+                            paymentMethodId: data.paymentMethodId,
+                            pendingProposal: null
+                        });
+                        // Keep modal open, show processing message
+                        setSubmitting(false);
+                        return;
+                    }
+                }
+            } catch (err) {
+                console.error('Error accepting lead with payment method:', err);
+                alert(err.response?.data?.error || 'Failed to accept lead');
+                setSubmitting(false);
+                setShowPaymentModal(false);
+                return;
+            }
         }
 
-        // Clear accept modal data
-        setSelectedLead(null);
-        setProposalData({ description: '', price: '' });
-        setLeadCost(null);
+        // Regular payment confirmation (when clientSecret was provided and payment succeeded)
+        if (data.paymentIntentId && data.status === 'succeeded') {
+            // Payment succeeded - contact details are now visible
+            setShowPaymentModal(false);
+            setPaymentData({
+                clientSecret: null,
+                paymentIntentId: null,
+                leadCost: null,
+                paymentMethodId: null,
+                pendingProposal: null
+            });
 
-        // Show success message
-        alert('Payment successful! Lead accepted and proposal sent to customer.');
+            // Clear accept modal data
+            setSelectedLead(null);
+            setProposalData({ description: '', price: '' });
+            setLeadCost(null);
 
-        // Reload lead usage stats after accepting
-        await loadLeadUsage();
-
-        // If current filter won't show ACCEPTED leads, switch to 'all' to show the updated lead
-        // This will trigger useEffect to reload leads automatically
-        if (statusFilter !== 'all' && statusFilter !== 'ACCEPTED') {
-            setStatusFilter('all');
-        } else {
-            // If filter already shows ACCEPTED or all, reload leads immediately
-            await loadLeads();
-        }
-
-        // Wait a moment for webhook to process, then reload again to ensure status is synced with backend
-        setTimeout(async () => {
+            // Reload leads and usage stats
             await loadLeads();
             await loadLeadUsage();
-        }, 2000); // Wait 2 seconds for webhook to process
+
+            // Show success message
+            alert('✅ Payment successful! Lead accepted and proposal sent to customer. Customer contact details are now available.');
+
+            // Wait a moment for webhook to process, then reload again to ensure status is synced
+            setTimeout(async () => {
+                await loadLeads();
+                await loadLeadUsage();
+            }, 2000);
+        }
     };
 
     const handlePaymentClose = () => {
@@ -727,7 +745,8 @@ const ProviderLeads = () => {
                                     )}
                                     {!selectedLead?.hasDiscount && (
                                         <p className="cost-note">
-                                            This is the fee you'll pay to accept this lead. You'll be redirected to complete payment after submitting.
+                                            <i className="fas fa-info-circle"></i>
+                                            This is the fee you'll pay to accept this lead. Payment will be charged automatically when you accept, and customer contact details will be revealed after successful payment.
                                         </p>
                                     )}
                                 </div>
@@ -865,6 +884,7 @@ const ProviderLeads = () => {
                     leadCost={paymentData.leadCost}
                     clientSecret={paymentData.clientSecret}
                     paymentIntentId={paymentData.paymentIntentId}
+                    pendingProposal={paymentData.pendingProposal}
                     onSuccess={handlePaymentSuccess}
                 />
             )}

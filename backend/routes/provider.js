@@ -9,6 +9,190 @@ const stripe = require('../config/stripe');
 const { getLeadCost, getLeadCostWithDiscount } = require('../config/leadPricing');
 const getSubscriptionBenefits = require('../utils/getSubscriptionBenefits');
 const getMonthlyAcceptedLeadsCount = require('../utils/getMonthlyAcceptedLeadsCount');
+const AlternativeProviderSelection = require('../models/AlternativeProviderSelection');
+
+/**
+ * Assign lead to next alternative provider when a provider rejects
+ * @param {number} serviceRequestId - The service request ID
+ * @param {number} rejectedLeadId - The ID of the rejected lead
+ * @param {number} rejectedProviderId - The user ID of the provider who rejected
+ */
+async function assignLeadToNextAlternative(serviceRequestId, rejectedLeadId, rejectedProviderId) {
+    try {
+        console.log(`[assignLeadToNextAlternative] Starting reassignment for service request ${serviceRequestId}, rejected lead ${rejectedLeadId}, rejected provider ${rejectedProviderId}`);
+
+        // Find alternative provider selections for this service request
+        const alternatives = await AlternativeProviderSelection.findAll({
+            where: { serviceRequestId: serviceRequestId },
+            order: [['position', 'ASC']]
+        });
+
+        if (alternatives.length === 0) {
+            console.log(`[assignLeadToNextAlternative] No alternative providers found for service request ${serviceRequestId}`);
+            return;
+        }
+
+        console.log(`[assignLeadToNextAlternative] Found ${alternatives.length} alternative providers`);
+
+        // Find the first alternative that doesn't have an accepted/rejected lead and isn't the rejected provider
+        for (const alt of alternatives) {
+            // Get provider profile to find userId
+            const providerProfile = await ProviderProfile.findByPk(alt.providerId, {
+                attributes: ['id', 'userId'],
+                include: [{
+                    model: User,
+                    as: 'user',
+                    attributes: ['id', 'name', 'email', 'isActive']
+                }]
+            });
+
+            if (!providerProfile || !providerProfile.user) {
+                console.log(`[assignLeadToNextAlternative] Provider profile not found for alternative ${alt.id}`);
+                continue;
+            }
+
+            const providerUserId = providerProfile.userId;
+
+            // Skip if this is the provider who just rejected
+            if (providerUserId === rejectedProviderId) {
+                console.log(`[assignLeadToNextAlternative] Skipping provider ${providerUserId} - they just rejected the lead`);
+                continue;
+            }
+
+            // Check if provider is active
+            if (!providerProfile.user.isActive) {
+                console.log(`[assignLeadToNextAlternative] Skipping inactive provider ${providerUserId}`);
+                continue;
+            }
+
+            // Check if this provider already has a lead for this request (accepted, pending, or routed)
+            const existingLeads = await Lead.findAll({
+                where: {
+                    providerId: providerUserId,
+                    status: { [Op.in]: ['submitted', 'routed', 'accepted'] }
+                }
+            });
+
+            let hasExistingLead = false;
+            for (const existingLead of existingLeads) {
+                try {
+                    const metadata = typeof existingLead.metadata === 'string'
+                        ? JSON.parse(existingLead.metadata)
+                        : existingLead.metadata;
+                    if (metadata && metadata.serviceRequestId === serviceRequestId) {
+                        hasExistingLead = true;
+                        console.log(`[assignLeadToNextAlternative] Provider ${providerUserId} already has a lead for this request`);
+                        break;
+                    }
+                } catch (e) {
+                    // Skip if metadata parsing fails
+                }
+            }
+
+            if (!hasExistingLead) {
+                // Create a new lead for this alternative provider
+                const serviceRequest = await ServiceRequest.findByPk(serviceRequestId, {
+                    attributes: ['id', 'customerId', 'categoryId', 'zipCode', 'projectTitle', 'projectDescription', 'preferredDate', 'preferredTime', 'attachments'],
+                    include: [
+                        { model: User, as: 'customer', attributes: ['id', 'name', 'email', 'phone'] },
+                        { model: Category, as: 'category', attributes: ['id', 'name'] }
+                    ]
+                });
+
+                if (!serviceRequest) {
+                    console.error(`[assignLeadToNextAlternative] Service request ${serviceRequestId} not found`);
+                    continue;
+                }
+
+                // Get business for this provider
+                const business = await Business.findOne({
+                    where: { ownerId: providerUserId },
+                    attributes: ['id', 'name']
+                });
+
+                if (!business) {
+                    console.log(`[assignLeadToNextAlternative] No business found for provider ${providerUserId}`);
+                    continue;
+                }
+
+                // Create lead
+                const newLead = await Lead.create({
+                    customerId: serviceRequest.customerId,
+                    businessId: business.id,
+                    providerId: providerUserId,
+                    serviceType: serviceRequest.projectTitle || serviceRequest.category?.name || 'Service Request',
+                    categoryId: serviceRequest.categoryId,
+                    locationCity: null,
+                    locationState: null,
+                    locationPostalCode: serviceRequest.zipCode,
+                    description: serviceRequest.projectDescription,
+                    customerName: serviceRequest.customer.name,
+                    customerEmail: serviceRequest.customer.email,
+                    customerPhone: serviceRequest.customer.phone,
+                    status: 'routed',
+                    metadata: JSON.stringify({
+                        serviceRequestId: serviceRequestId,
+                        assignedFrom: rejectedLeadId,
+                        position: alt.position,
+                        reassigned: true,
+                        reassignedAt: new Date().toISOString(),
+                        projectTitle: serviceRequest.projectTitle || null,
+                        projectDescription: serviceRequest.projectDescription || null,
+                        preferredDate: serviceRequest.preferredDate || null,
+                        preferredTime: serviceRequest.preferredTime || null,
+                        attachments: serviceRequest.attachments || []
+                    }),
+                    routedAt: new Date()
+                });
+
+                // Send email to alternative provider
+                if (providerProfile.user && providerProfile.user.email) {
+                    await sendEmail({
+                        to: providerProfile.user.email,
+                        subject: `New lead: ${serviceRequest.projectTitle || 'Service Request'}`,
+                        html: `
+                            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9f9f9;">
+                                <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; text-align: center; border-radius: 8px 8px 0 0;">
+                                    <h1 style="margin: 0; font-size: 28px;">New Lead Available</h1>
+                                </div>
+                                <div style="background-color: white; padding: 30px; border-radius: 0 0 8px 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                                    <p style="color: #333; font-size: 16px; line-height: 1.6;">
+                                        Hi ${providerProfile.user.name || 'Provider'},
+                                    </p>
+                                    <p style="color: #333; font-size: 16px; line-height: 1.6;">
+                                        A new lead has been assigned to you as an alternative provider.
+                                    </p>
+                                    <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0;">
+                                        <h3 style="margin-top: 0; color: #333;">Lead Details</h3>
+                                        <p style="margin: 5px 0;"><strong>Project:</strong> ${serviceRequest.projectTitle || 'Service Request'}</p>
+                                        ${serviceRequest.category ? `<p style="margin: 5px 0;"><strong>Category:</strong> ${serviceRequest.category.name}</p>` : ''}
+                                        ${serviceRequest.zipCode ? `<p style="margin: 5px 0;"><strong>Location:</strong> ${serviceRequest.zipCode}</p>` : ''}
+                                    </div>
+                                    <div style="text-align: center; margin-top: 30px;">
+                                        <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/user-dashboard/leads" 
+                                           style="display: inline-block; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; 
+                                                  padding: 14px 32px; text-decoration: none; border-radius: 8px; 
+                                                  font-weight: 600; font-size: 16px;">
+                                            View Lead
+                                        </a>
+                                    </div>
+                                </div>
+                            </div>
+                        `
+                    }).catch(err => console.error('Failed to send alternative provider email:', err));
+                }
+
+                console.log(`[assignLeadToNextAlternative] ✅ Assigned lead ${newLead.id} to alternative provider ${providerUserId} (position ${alt.position}) for service request ${serviceRequestId}`);
+                return; // Only assign to first available alternative
+            }
+        }
+
+        console.log(`[assignLeadToNextAlternative] No available alternative providers for service request ${serviceRequestId}`);
+    } catch (error) {
+        console.error('[assignLeadToNextAlternative] Error:', error);
+        throw error;
+    }
+}
 
 // @route   GET /api/provider/lead-usage
 // @desc    Get provider's monthly lead usage statistics
@@ -40,6 +224,15 @@ router.get('/lead-usage', protect, async (req, res) => {
             ? Math.max(0, maxLeads - currentMonthCount)
             : null; // null means unlimited
 
+        // Format plan name for display
+        let planName = subscriptionBenefits.planName || subscriptionBenefits.tier || 'Basic';
+        // If plan name is just the tier, format it nicely
+        if (planName && (planName.toUpperCase() === 'PREMIUM' || planName.toUpperCase() === 'PRO' || planName.toUpperCase() === 'BASIC')) {
+            planName = planName.charAt(0).toUpperCase() + planName.slice(1).toLowerCase() + ' Plan';
+        } else if (!planName || planName === 'Basic') {
+            planName = 'Basic Plan';
+        }
+
         res.json({
             success: true,
             data: {
@@ -47,7 +240,7 @@ router.get('/lead-usage', protect, async (req, res) => {
                 maxLeads: maxLeads,
                 remainingLeads: remainingLeads,
                 isUnlimited: maxLeads === null,
-                planName: subscriptionBenefits.planName || subscriptionBenefits.tier,
+                planName: planName,
                 tier: subscriptionBenefits.tier,
                 hasActiveSubscription: subscriptionBenefits.hasActiveSubscription,
                 limitReached: maxLeads !== null && currentMonthCount >= maxLeads
@@ -211,30 +404,25 @@ router.get('/leads', protect, async (req, res) => {
         // Format response with masked customer data
         // Note: providerProfile is already declared at the beginning of this route handler
         const formattedLeads = await Promise.all(leads.map(async (lead) => {
-            // Use customer from User association or from lead fields
+            // Hide customer contact details until lead is accepted
+            // Only show contact details if lead status is 'accepted' (meaning payment succeeded)
+            const isAccepted = lead.status === 'accepted';
             const customer = lead.customer;
-            const customerName = lead.customerName || (customer?.name || customer?.firstName || 'Customer');
-            const customerEmail = lead.customerEmail || customer?.email;
 
-            let maskedName = 'Customer';
-            let maskedEmail = null;
+            let customerName = null;
+            let customerEmail = null;
+            let customerPhone = null;
 
-            // Mask customer name
-            if (customerName) {
-                const nameParts = customerName.split(' ');
-                if (nameParts.length > 1) {
-                    maskedName = `${nameParts[0]} ${nameParts[1].charAt(0)}***`;
-                } else {
-                    maskedName = `${nameParts[0].charAt(0)}***`;
-                }
-            }
-
-            // Mask email
-            if (customerEmail) {
-                const emailParts = customerEmail.split('@');
-                if (emailParts[0].length > 0) {
-                    maskedEmail = `${emailParts[0].charAt(0)}***@${emailParts[1]}`;
-                }
+            if (isAccepted) {
+                // Lead accepted - show full contact details
+                customerName = lead.customerName || (customer?.name || customer?.firstName || 'Customer');
+                customerEmail = lead.customerEmail || customer?.email;
+                customerPhone = lead.customerPhone || customer?.phone;
+            } else {
+                // Lead not accepted - completely hide contact details
+                customerName = null;
+                customerEmail = null;
+                customerPhone = null;
             }
 
             // Extract service request info from metadata if available
@@ -261,8 +449,23 @@ router.get('/leads', protect, async (req, res) => {
                 }
             }
 
+            // If we have serviceRequestId but no projectTitle in metadata, fetch it from ServiceRequest
+            let actualProjectTitle = serviceRequestInfo?.projectTitle || lead.serviceType || 'Service Request';
+            if (serviceRequestId && (!serviceRequestInfo?.projectTitle || serviceRequestInfo.projectTitle === lead.serviceType)) {
+                try {
+                    const serviceRequest = await ServiceRequest.findByPk(serviceRequestId, {
+                        attributes: ['id', 'projectTitle']
+                    });
+                    if (serviceRequest && serviceRequest.projectTitle) {
+                        actualProjectTitle = serviceRequest.projectTitle;
+                    }
+                } catch (e) {
+                    console.error('Error fetching service request for project title:', e);
+                }
+            }
+
             // Use service request info if available, otherwise use lead data
-            const projectTitle = serviceRequestInfo?.projectTitle || lead.serviceType || 'Service Request';
+            const projectTitle = actualProjectTitle;
             const projectDescription = lead.description;
             const zipCode = lead.locationPostalCode || lead.locationCity || 'N/A';
             const preferredDate = serviceRequestInfo?.preferredDate || null;
@@ -434,8 +637,10 @@ router.get('/leads', protect, async (req, res) => {
                     subCategory: null, // Not in current table structure
                     customer: {
                         id: customer?.id || null,
-                        name: maskedName,
-                        email: maskedEmail
+                        name: customerName,
+                        email: customerEmail,
+                        phone: customerPhone,
+                        contactDetailsVisible: isAccepted // Flag to indicate if contact details are visible
                     }
                 }
             };
@@ -533,8 +738,16 @@ router.patch('/leads/:id/accept', protect, async (req, res) => {
             });
         }
 
-        // Get proposal data from request body
-        const { description, price } = req.body;
+        // Get proposal data and payment method from request body
+        const { description, price, paymentMethodId } = req.body;
+
+        // Payment method is required for automatic charging
+        if (!paymentMethodId) {
+            return res.status(400).json({
+                success: false,
+                error: 'Payment method is required to accept the lead. Payment will be charged automatically upon acceptance.'
+            });
+        }
 
         // Check if payment already in progress
         if (lead.stripePaymentIntentId) {
@@ -639,60 +852,140 @@ router.patch('/leads/:id/accept', protect, async (req, res) => {
             console.log(`[Accept Lead] No active subscription. Lead cost: $${leadCostDollars.toFixed(2)} (full price)`);
         }
 
-        // Create Stripe PaymentIntent for lead cost
-        console.log(`[Accept Lead] Creating Stripe PaymentIntent for lead ${lead.id}`);
+        // Create and automatically confirm Stripe PaymentIntent for lead cost
+        // This charges the provider immediately when they accept the lead
+        console.log(`[Accept Lead] Creating and auto-confirming Stripe PaymentIntent for lead ${lead.id}`);
         let paymentIntent;
         try {
+            // Get customer info to store in lead after payment succeeds
+            const customer = await User.findByPk(lead.customerId, {
+                attributes: ['id', 'name', 'email', 'phone', 'firstName', 'lastName']
+            });
+
+            const customerName = customer?.firstName && customer?.lastName
+                ? `${customer.firstName} ${customer.lastName}`
+                : customer?.name || customer?.email || 'Customer';
+
             paymentIntent = await stripe.paymentIntents.create({
                 amount: leadCostCents,
                 currency: 'usd',
+                confirm: true, // Automatically confirm and charge
+                payment_method: paymentMethodId, // Payment method from frontend
+                return_url: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/user-dashboard/leads`,
                 metadata: {
                     leadId: lead.id.toString(),
                     serviceRequestId: serviceRequestId ? serviceRequestId.toString() : '',
                     providerId: req.user.id.toString(),
                     type: 'lead_acceptance',
                     proposalDescription: description.trim().substring(0, 200), // Limit length
-                    proposalPrice: parseFloat(price).toFixed(2)
+                    proposalPrice: parseFloat(price).toFixed(2),
+                    customerName: customerName,
+                    customerEmail: customer?.email || '',
+                    customerPhone: customer?.phone || ''
                 },
                 description: `Lead acceptance fee - ${lead.serviceType || 'Service Request'}`,
-                // Store proposal data temporarily in metadata (will be used after payment succeeds)
                 automatic_payment_methods: {
                     enabled: true
                 }
             });
-            console.log(`[Accept Lead] ✅ Stripe PaymentIntent created: ${paymentIntent.id}`);
+            console.log(`[Accept Lead] ✅ Stripe PaymentIntent created and confirmed: ${paymentIntent.id}, status: ${paymentIntent.status}`);
+
+            // If payment succeeded immediately, update lead and show contact details
+            if (paymentIntent.status === 'succeeded') {
+                console.log(`[Accept Lead] ✅ Payment succeeded immediately, updating lead and revealing contact details`);
+
+                // Update lead with customer contact details and accepted status
+                await lead.update({
+                    status: 'accepted',
+                    stripePaymentIntentId: paymentIntent.id,
+                    leadCost: leadCostCents,
+                    customerName: customerName,
+                    customerEmail: customer?.email || null,
+                    customerPhone: customer?.phone || null
+                });
+
+                // Create proposal if serviceRequestId exists
+                if (serviceRequestId) {
+                    const proposal = await Proposal.create({
+                        serviceRequestId: serviceRequestId,
+                        providerId: providerProfile.id,
+                        details: description.trim(),
+                        price: parseFloat(price),
+                        status: 'SENT'
+                    });
+                    console.log(`[Accept Lead] ✅ Proposal created: ID=${proposal.id}`);
+                }
+
+                return res.json({
+                    success: true,
+                    message: 'Lead accepted and payment processed successfully',
+                    leadCost: leadCostDollars.toFixed(2),
+                    paymentSucceeded: true,
+                    contactDetailsVisible: true,
+                    customer: {
+                        name: customerName,
+                        email: customer?.email,
+                        phone: customer?.phone
+                    }
+                });
+            }
         } catch (stripeError) {
-            console.error('❌ Stripe PaymentIntent creation failed:', stripeError);
-            throw new Error(`Failed to create payment intent: ${stripeError.message}`);
+            console.error('❌ Stripe PaymentIntent creation/confirmation failed:', stripeError);
+            throw new Error(`Failed to process payment: ${stripeError.message}`);
         }
 
-        // Update lead with payment intent ID and cost
-        console.log(`[Accept Lead] Updating lead ${lead.id} with payment intent ${paymentIntent.id}`);
-        try {
-            // Store proposal data in lead metadata temporarily (will be used by webhook)
-            let metadata = {};
-            if (lead.metadata) {
-                try {
-                    metadata = typeof lead.metadata === 'string' ? JSON.parse(lead.metadata) : lead.metadata;
-                } catch (e) {
-                    console.error('Error parsing lead metadata:', e);
-                }
-            }
-            metadata.pendingProposal = {
-                description: description.trim(),
-                price: parseFloat(price)
-            };
+        // If payment requires action (3D Secure, etc.), return client secret for frontend confirmation
+        if (paymentIntent.status === 'requires_action' || paymentIntent.status === 'requires_payment_method') {
+            console.log(`[Accept Lead] Payment requires action: ${paymentIntent.status}`);
 
-            // Update lead with payment intent ID, cost, and metadata in one call
-            await lead.update({
-                stripePaymentIntentId: paymentIntent.id,
-                leadCost: leadCostCents,
-                metadata: JSON.stringify(metadata)
+            // Update lead with payment intent ID and cost (but don't reveal contact details yet)
+            try {
+                let metadata = {};
+                if (lead.metadata) {
+                    try {
+                        metadata = typeof lead.metadata === 'string' ? JSON.parse(lead.metadata) : lead.metadata;
+                    } catch (e) {
+                        console.error('Error parsing lead metadata:', e);
+                    }
+                }
+                metadata.pendingProposal = {
+                    description: description.trim(),
+                    price: parseFloat(price)
+                };
+
+                await lead.update({
+                    stripePaymentIntentId: paymentIntent.id,
+                    leadCost: leadCostCents,
+                    metadata: JSON.stringify(metadata)
+                });
+                console.log(`[Accept Lead] ✅ Lead updated with payment intent ID (awaiting payment confirmation)`);
+            } catch (updateError) {
+                console.error('❌ Failed to update lead:', updateError);
+                throw new Error(`Failed to update lead: ${updateError.message}`);
+            }
+
+            // Return client secret for frontend to complete payment
+            return res.json({
+                success: true,
+                clientSecret: paymentIntent.client_secret,
+                paymentIntentId: paymentIntent.id,
+                leadCost: leadCostDollars.toFixed(2),
+                requiresAction: true,
+                message: 'Please complete payment to accept the lead'
             });
-            console.log(`[Accept Lead] ✅ Lead updated with payment intent ID and proposal data`);
-        } catch (updateError) {
-            console.error('❌ Failed to update lead:', updateError);
-            throw new Error(`Failed to update lead: ${updateError.message}`);
+        }
+
+        // If payment is still processing, return client secret
+        if (paymentIntent.status === 'processing') {
+            console.log(`[Accept Lead] Payment is processing`);
+            return res.json({
+                success: true,
+                clientSecret: paymentIntent.client_secret,
+                paymentIntentId: paymentIntent.id,
+                leadCost: leadCostDollars.toFixed(2),
+                processing: true,
+                message: 'Payment is processing. Contact details will be available once payment is confirmed.'
+            });
         }
 
         // Log activity (non-blocking)
@@ -1060,6 +1353,16 @@ router.patch('/leads/:id/reject', protect, async (req, res) => {
                 rejectionReasonOther: rejectionReason === 'OTHER' ? rejectionReasonOther : null
             }
         });
+
+        // If service request exists, try to assign to next alternative provider
+        if (serviceRequestId) {
+            try {
+                await assignLeadToNextAlternative(serviceRequestId, lead.id, req.user.id);
+            } catch (assignError) {
+                console.error('Error assigning lead to next alternative provider:', assignError);
+                // Don't fail the rejection if reassignment fails
+            }
+        }
 
         res.json({
             success: true,

@@ -1798,5 +1798,212 @@ router.delete('/subscription-plans/:id', async (req, res) => {
   }
 });
 
+// @route   GET /api/admin/providers
+// @desc    Get all providers with statistics (admin)
+// @access  Private (Admin only)
+router.get('/providers', async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 20;
+    const offset = (page - 1) * limit;
+    const filterStatus = req.query.filterStatus || 'all'; // all, active, inactive
+
+    // Build where clause based on filter
+    const whereClause = {
+      role: 'business_owner'
+    };
+
+    // Apply status filter if not 'all'
+    if (filterStatus === 'active') {
+      whereClause.isActive = true;
+    } else if (filterStatus === 'inactive') {
+      whereClause.isActive = false;
+    }
+
+    // Get all users with business_owner role (simple info only - no provider profile)
+    const { count, rows: users } = await User.findAndCountAll({
+      where: whereClause,
+      attributes: ['id', 'name', 'email', 'phone', 'avatar', 'isActive', 'createdAt'],
+      distinct: true, // Ensure accurate count when using includes
+      include: [
+        {
+          model: Business,
+          as: 'businesses',
+          attributes: ['id', 'name', 'isVerified'],
+          required: false
+        },
+        {
+          model: UserSubscription,
+          as: 'subscription',
+          attributes: ['id', 'status', 'currentPeriodStart', 'currentPeriodEnd'],
+          include: [{
+            model: SubscriptionPlan,
+            as: 'plan',
+            attributes: ['id', 'name', 'tier', 'price'],
+            required: false
+          }],
+          required: false
+        }
+      ],
+      order: [['createdAt', 'DESC']],
+      limit,
+      offset
+    });
+
+    // Get simple provider info with verification status from businesses
+    const providersWithStats = users.map((user) => {
+      // Get verification status from businesses (if any business is verified, provider is verified)
+      const isVerified = user.businesses && user.businesses.length > 0
+        ? user.businesses.some(business => business.isVerified === true)
+        : false;
+
+      // Get active subscription
+      const activeSubscription = (user.subscription && user.subscription.status === 'ACTIVE')
+        ? user.subscription
+        : null;
+
+      return {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        phone: user.phone,
+        avatar: user.avatar,
+        isActive: user.isActive,
+        isVerified: isVerified,
+        createdAt: user.createdAt,
+        businessName: user.businesses && user.businesses.length > 0 ? user.businesses[0].name : null,
+        subscription: activeSubscription ? {
+          planName: activeSubscription.plan?.name || 'N/A',
+          tier: activeSubscription.plan?.tier || 'BASIC'
+        } : null
+      };
+    });
+
+    res.json({
+      success: true,
+      count: providersWithStats.length,
+      total: count,
+      page,
+      pages: Math.ceil(count / limit),
+      providers: providersWithStats
+    });
+  } catch (error) {
+    console.error('Admin get providers error:', error);
+    res.status(500).json({ error: 'Server error', message: error.message });
+  }
+});
+
+// @route   PUT /api/admin/providers/:id/status
+// @desc    Update provider status (activate/deactivate)
+// @access  Private (Admin only)
+router.put('/providers/:id/status', async (req, res) => {
+  try {
+    const userId = parseInt(req.params.id);
+    const { isActive } = req.body;
+
+    if (isNaN(userId)) {
+      return res.status(400).json({ error: 'Invalid provider ID' });
+    }
+
+    const user = await User.findByPk(userId);
+    if (!user) {
+      return res.status(404).json({ error: 'Provider not found' });
+    }
+
+    if (user.role !== 'business_owner') {
+      return res.status(400).json({ error: 'User is not a provider' });
+    }
+
+    // Update user's isActive status
+    await user.update({ isActive });
+
+    // Update all businesses owned by this provider
+    await Business.update(
+      { isActive },
+      { where: { ownerId: userId } }
+    );
+
+    await logActivity({
+      type: 'provider_status_updated',
+      description: `Provider ${user.name} (ID: ${userId}) was ${isActive ? 'activated' : 'deactivated'} by admin`,
+      userId: req.user.id,
+      metadata: { providerId: userId, providerName: user.name, isActive }
+    });
+
+    res.json({
+      success: true,
+      message: `Provider ${isActive ? 'activated' : 'deactivated'} successfully`,
+      provider: {
+        id: user.id,
+        name: user.name,
+        isActive: user.isActive
+      }
+    });
+  } catch (error) {
+    console.error('Admin update provider status error:', error);
+    res.status(500).json({ error: 'Server error', message: error.message });
+  }
+});
+
+// @route   PUT /api/admin/providers/:id/verify
+// @desc    Verify/Unverify provider (update business verification status)
+// @access  Private (Admin only)
+router.put('/providers/:id/verify', async (req, res) => {
+  try {
+    const userId = parseInt(req.params.id);
+    const { isVerified } = req.body;
+
+    if (isNaN(userId)) {
+      return res.status(400).json({ error: 'Invalid provider ID' });
+    }
+
+    const user = await User.findByPk(userId, {
+      include: [{
+        model: Business,
+        as: 'businesses',
+        attributes: ['id', 'name', 'isVerified']
+      }]
+    });
+
+    if (!user) {
+      return res.status(404).json({ error: 'Provider not found' });
+    }
+
+    if (user.role !== 'business_owner') {
+      return res.status(400).json({ error: 'User is not a provider' });
+    }
+
+    if (!user.businesses || user.businesses.length === 0) {
+      return res.status(400).json({ error: 'Provider has no businesses to verify' });
+    }
+
+    // Update all businesses for this provider
+    await Business.update(
+      { isVerified: isVerified === true },
+      { where: { ownerId: userId } }
+    );
+
+    await logActivity({
+      type: 'provider_verification_updated',
+      description: `Provider ${user.name} (ID: ${userId}) was ${isVerified ? 'verified' : 'unverified'} by admin`,
+      userId: req.user.id,
+      metadata: { providerId: userId, providerName: user.name, isVerified }
+    });
+
+    res.json({
+      success: true,
+      message: `Provider ${isVerified ? 'verified' : 'unverified'} successfully`,
+      provider: {
+        id: user.id,
+        name: user.name,
+        isVerified: isVerified === true
+      }
+    });
+  } catch (error) {
+    console.error('Admin update provider verification error:', error);
+    res.status(500).json({ error: 'Server error', message: error.message });
+  }
+});
+
 module.exports = router;
 

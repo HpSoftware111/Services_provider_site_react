@@ -79,7 +79,7 @@ const UserDashboardLayout = ({ children }) => {
         setEditingField(null);
         setTimeout(() => setMessage({ type: '', text: '' }), 3000);
       } catch (error) {
-        setMessage({ type: 'error', text: 'Failed to upload profile picture' });
+        setMessage({ type: 'error', text: error.response?.data?.error || 'Failed to upload profile picture' });
       } finally {
         setUploadingAvatar(false);
       }

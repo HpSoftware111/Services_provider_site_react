@@ -78,16 +78,51 @@ router.get('/plans', protect, async (req, res) => {
 // @access  Private (Business owner only)
 router.get('/my-subscription', protect, async (req, res) => {
   try {
-    const subscription = await UserSubscription.findOne({
-      where: { userId: req.user.id },
-      include: [
-        {
-          model: SubscriptionPlan,
-          as: 'plan',
-          attributes: ['id', 'name', 'tier', 'price', 'billingCycle', 'description', 'features', 'leadDiscountPercent', 'priorityBoostPoints', 'isFeatured', 'hasAdvancedAnalytics', 'maxLeadsPerMonth']
+    // Use try-catch to handle missing columns gracefully if migration hasn't been run
+    let subscription;
+    try {
+      subscription = await UserSubscription.findOne({
+        where: { userId: req.user.id },
+        include: [
+          {
+            model: SubscriptionPlan,
+            as: 'plan',
+            attributes: ['id', 'name', 'tier', 'price', 'billingCycle', 'description', 'features', 'leadDiscountPercent', 'priorityBoostPoints', 'isFeatured', 'hasAdvancedAnalytics', 'maxLeadsPerMonth']
+          }
+        ]
+      });
+    } catch (dbError) {
+      // If error is about missing columns, try with explicit attributes (migration not run yet)
+      if (dbError.message && dbError.message.includes('Unknown column')) {
+        console.log('Migration not run yet, using explicit attributes for subscription in my-subscription...');
+        subscription = await UserSubscription.findOne({
+          where: { userId: req.user.id },
+          include: [
+            {
+              model: SubscriptionPlan,
+              as: 'plan',
+              attributes: ['id', 'name', 'tier', 'price', 'billingCycle', 'description', 'features', 'leadDiscountPercent', 'priorityBoostPoints', 'isFeatured', 'hasAdvancedAnalytics']
+            }
+          ]
+        });
+        // Add default maxLeadsPerMonth if plan exists
+        if (subscription && subscription.plan) {
+          const planData = subscription.plan.toJSON();
+          if (planData.tier === 'BASIC') {
+            planData.maxLeadsPerMonth = 10;
+          } else if (planData.tier === 'PREMIUM') {
+            planData.maxLeadsPerMonth = 30;
+          } else if (planData.tier === 'PRO') {
+            planData.maxLeadsPerMonth = null; // Unlimited
+          } else {
+            planData.maxLeadsPerMonth = 10; // Default
+          }
+          subscription.plan = planData;
         }
-      ]
-    });
+      } else {
+        throw dbError;
+      }
+    }
 
     res.json({
       success: true,
@@ -219,12 +254,25 @@ router.post('/create-payment-intent', protect, async (req, res) => {
       });
     }
 
-    // Verify plan exists
+    // Verify plan exists (handle possible missing columns like maxLeadsPerMonth by using explicit attributes)
     const plan = await SubscriptionPlan.findOne({
       where: {
         id: subscriptionPlanId,
         isActive: true
-      }
+      },
+      attributes: [
+        'id',
+        'name',
+        'tier',
+        'price',
+        'billingCycle',
+        'description',
+        'features',
+        'leadDiscountPercent',
+        'priorityBoostPoints',
+        'isFeatured',
+        'hasAdvancedAnalytics'
+      ]
     });
 
     if (!plan) {
@@ -309,12 +357,25 @@ router.post('/subscribe', protect, async (req, res) => {
       });
     }
 
-    // Verify plan exists
+    // Verify plan exists (use explicit attributes to avoid missing-column errors)
     const plan = await SubscriptionPlan.findOne({
       where: {
         id: subscriptionPlanId,
         isActive: true
-      }
+      },
+      attributes: [
+        'id',
+        'name',
+        'tier',
+        'price',
+        'billingCycle',
+        'description',
+        'features',
+        'leadDiscountPercent',
+        'priorityBoostPoints',
+        'isFeatured',
+        'hasAdvancedAnalytics'
+      ]
     });
 
     if (!plan) {
@@ -390,15 +451,72 @@ router.post('/subscribe', protect, async (req, res) => {
         cancelledAt: null
       });
 
-      const updatedSubscription = await UserSubscription.findByPk(existingSubscription.id, {
-        include: [
-          {
-            model: SubscriptionPlan,
-            as: 'plan',
-            attributes: ['id', 'name', 'tier', 'price', 'billingCycle', 'description', 'features', 'leadDiscountPercent', 'priorityBoostPoints', 'isFeatured', 'hasAdvancedAnalytics', 'maxLeadsPerMonth']
+      let updatedSubscription;
+      try {
+        updatedSubscription = await UserSubscription.findByPk(existingSubscription.id, {
+          include: [
+            {
+              model: SubscriptionPlan,
+              as: 'plan',
+              attributes: [
+                'id',
+                'name',
+                'tier',
+                'price',
+                'billingCycle',
+                'description',
+                'features',
+                'leadDiscountPercent',
+                'priorityBoostPoints',
+                'isFeatured',
+                'hasAdvancedAnalytics',
+                'maxLeadsPerMonth'
+              ]
+            }
+          ]
+        });
+      } catch (dbError) {
+        // Handle case where maxLeadsPerMonth column does not exist yet
+        if (dbError.message && dbError.message.includes('Unknown column')) {
+          console.log('Migration not run yet, using explicit attributes for subscription plan in subscribe (update)...');
+          updatedSubscription = await UserSubscription.findByPk(existingSubscription.id, {
+            include: [
+              {
+                model: SubscriptionPlan,
+                as: 'plan',
+                attributes: [
+                  'id',
+                  'name',
+                  'tier',
+                  'price',
+                  'billingCycle',
+                  'description',
+                  'features',
+                  'leadDiscountPercent',
+                  'priorityBoostPoints',
+                  'isFeatured',
+                  'hasAdvancedAnalytics'
+                ]
+              }
+            ]
+          });
+          if (updatedSubscription && updatedSubscription.plan) {
+            const planData = updatedSubscription.plan.toJSON();
+            if (planData.tier === 'BASIC') {
+              planData.maxLeadsPerMonth = 10;
+            } else if (planData.tier === 'PREMIUM') {
+              planData.maxLeadsPerMonth = 30;
+            } else if (planData.tier === 'PRO') {
+              planData.maxLeadsPerMonth = null;
+            } else {
+              planData.maxLeadsPerMonth = 10;
+            }
+            updatedSubscription.plan = planData;
           }
-        ]
-      });
+        } else {
+          throw dbError;
+        }
+      }
 
       return res.json({
         success: true,
@@ -417,15 +535,71 @@ router.post('/subscribe', protect, async (req, res) => {
           : new Date(Date.now() + 365 * 24 * 60 * 60 * 1000)
       });
 
-      const newSubscription = await UserSubscription.findByPk(subscription.id, {
-        include: [
-          {
-            model: SubscriptionPlan,
-            as: 'plan',
-            attributes: ['id', 'name', 'tier', 'price', 'billingCycle', 'description', 'features', 'leadDiscountPercent', 'priorityBoostPoints', 'isFeatured', 'hasAdvancedAnalytics', 'maxLeadsPerMonth']
+      let newSubscription;
+      try {
+        newSubscription = await UserSubscription.findByPk(subscription.id, {
+          include: [
+            {
+              model: SubscriptionPlan,
+              as: 'plan',
+              attributes: [
+                'id',
+                'name',
+                'tier',
+                'price',
+                'billingCycle',
+                'description',
+                'features',
+                'leadDiscountPercent',
+                'priorityBoostPoints',
+                'isFeatured',
+                'hasAdvancedAnalytics',
+                'maxLeadsPerMonth'
+              ]
+            }
+          ]
+        });
+      } catch (dbError) {
+        if (dbError.message && dbError.message.includes('Unknown column')) {
+          console.log('Migration not run yet, using explicit attributes for subscription plan in subscribe (create)...');
+          newSubscription = await UserSubscription.findByPk(subscription.id, {
+            include: [
+              {
+                model: SubscriptionPlan,
+                as: 'plan',
+                attributes: [
+                  'id',
+                  'name',
+                  'tier',
+                  'price',
+                  'billingCycle',
+                  'description',
+                  'features',
+                  'leadDiscountPercent',
+                  'priorityBoostPoints',
+                  'isFeatured',
+                  'hasAdvancedAnalytics'
+                ]
+              }
+            ]
+          });
+          if (newSubscription && newSubscription.plan) {
+            const planData = newSubscription.plan.toJSON();
+            if (planData.tier === 'BASIC') {
+              planData.maxLeadsPerMonth = 10;
+            } else if (planData.tier === 'PREMIUM') {
+              planData.maxLeadsPerMonth = 30;
+            } else if (planData.tier === 'PRO') {
+              planData.maxLeadsPerMonth = null;
+            } else {
+              planData.maxLeadsPerMonth = 10;
+            }
+            newSubscription.plan = planData;
           }
-        ]
-      });
+        } else {
+          throw dbError;
+        }
+      }
 
       return res.status(201).json({
         success: true,

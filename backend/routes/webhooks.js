@@ -190,10 +190,23 @@ async function handleLeadPaymentSucceeded(paymentIntent) {
         serviceRequestId
     });
 
-    // Update lead status to accepted
-    await lead.update({
-        status: 'accepted'
+    // Get customer info to reveal contact details after payment succeeds
+    const customer = await User.findByPk(lead.customerId, {
+        attributes: ['id', 'name', 'email', 'phone', 'firstName', 'lastName']
     });
+
+    const customerName = customer?.firstName && customer?.lastName
+        ? `${customer.firstName} ${customer.lastName}`
+        : customer?.name || customer?.email || 'Customer';
+
+    // Update lead status to accepted and reveal customer contact details
+    await lead.update({
+        status: 'accepted',
+        customerName: customerName,
+        customerEmail: customer?.email || null,
+        customerPhone: customer?.phone || null
+    });
+    console.log(`[Webhook] ✅ Lead updated to accepted status with customer contact details revealed`);
 
     // Create Proposal if serviceRequestId exists
     let proposal = null;
