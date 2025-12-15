@@ -9,19 +9,52 @@ const { sequelize } = require('../config/database');
 router.get('/', async (req, res) => {
   try {
     const where = { isActive: true };
-    
+    const { Op } = require('sequelize');
+
     // Filter by category if provided
     if (req.query.categoryId) {
       where.categoryId = req.query.categoryId;
+      // When filtering by categoryId, return ALL subcategories for that category
+      // (not just those with businesses) so filters show all available options
+      const subcategories = await SubCategory.findAll({
+        where,
+        include: [{ model: Category, as: 'category', attributes: ['id', 'name', 'slug', 'icon'] }],
+        order: [['order', 'ASC'], ['name', 'ASC']]
+      });
+
+      // Get business counts for each subcategory (for display purposes)
+      const businessCounts = await Business.findAll({
+        attributes: [
+          'subCategoryId',
+          [sequelize.fn('COUNT', sequelize.col('id')), 'count']
+        ],
+        where: { isActive: true, subCategoryId: { [Op.ne]: null } },
+        group: ['subCategoryId'],
+        raw: true
+      });
+
+      const countMap = new Map(
+        businessCounts.map(item => [item.subCategoryId, parseInt(item.count)])
+      );
+
+      const responseSubcategories = subcategories.map(sub => ({
+        ...sub.toJSON(),
+        businessCount: countMap.get(sub.id) || 0
+      }));
+
+      return res.json({
+        success: true,
+        count: responseSubcategories.length,
+        subcategories: responseSubcategories
+      });
     }
 
-    // Get only subcategories that have active businesses
-    const { Op } = require('sequelize');
+    // If no categoryId provided, get only subcategories that have active businesses
     const subcategoriesWithBusinesses = await Business.findAll({
       attributes: ['subCategoryId'],
-      where: { 
+      where: {
         subCategoryId: { [Op.ne]: null },
-        isActive: true 
+        isActive: true
       },
       group: ['subCategoryId'],
       raw: true

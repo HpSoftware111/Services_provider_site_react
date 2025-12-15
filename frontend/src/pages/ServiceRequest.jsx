@@ -32,6 +32,8 @@ const ServiceRequest = () => {
     const [showBusinessModal, setShowBusinessModal] = useState(false);
     const [selectedBusinessDetail, setSelectedBusinessDetail] = useState(null);
     const [businessDetailLoading, setBusinessDetailLoading] = useState(false);
+    const [monthlyUsage, setMonthlyUsage] = useState(null);
+    const [usageLoading, setUsageLoading] = useState(false);
     const [formData, setFormData] = useState({
         categoryId: '',
         subCategoryId: '',
@@ -48,7 +50,21 @@ const ServiceRequest = () => {
 
     useEffect(() => {
         loadCategories();
+        loadMonthlyUsage();
     }, []);
+
+    const loadMonthlyUsage = async () => {
+        try {
+            setUsageLoading(true);
+            const response = await api.get('/subscriptions/monthly-usage');
+            setMonthlyUsage(response.data.usage);
+        } catch (error) {
+            console.error('Error loading monthly usage:', error);
+            // Don't show error to user, just continue
+        } finally {
+            setUsageLoading(false);
+        }
+    };
 
     useEffect(() => {
         if (formData.categoryId && categories.length > 0) {
@@ -482,6 +498,16 @@ const ServiceRequest = () => {
             return;
         }
 
+        // Check monthly limit before submitting
+        if (monthlyUsage && !monthlyUsage.isUnlimited && monthlyUsage.currentCount >= monthlyUsage.maxLimit) {
+            setMessage({
+                type: 'error',
+                text: `You have reached your monthly limit of ${monthlyUsage.maxLimit} service requests for ${monthlyUsage.planName}. Please upgrade your plan or wait until next month.`
+            });
+            setLoading(false);
+            return;
+        }
+
         try {
             // Convert file objects to base64 or prepare for upload
             const attachmentsData = await Promise.all(
@@ -518,14 +544,27 @@ const ServiceRequest = () => {
                 text: 'Service request submitted successfully! We will connect you with providers soon.'
             });
 
+            // Reload usage after successful submission
+            await loadMonthlyUsage();
+
             setTimeout(() => {
                 navigate('/user-dashboard');
             }, 2000);
         } catch (error) {
-            setMessage({
-                type: 'error',
-                text: error.response?.data?.error || 'Failed to submit service request'
-            });
+            // Check if it's a limit error
+            if (error.response?.data?.limitReached) {
+                setMessage({
+                    type: 'error',
+                    text: error.response.data.error
+                });
+                // Reload usage to show updated count
+                await loadMonthlyUsage();
+            } else {
+                setMessage({
+                    type: 'error',
+                    text: error.response?.data?.error || 'Failed to submit service request'
+                });
+            }
         } finally {
             setLoading(false);
         }
@@ -1024,6 +1063,56 @@ const ServiceRequest = () => {
     return (
         <div className="service-request-page">
             <div className="container">
+                {monthlyUsage && (
+                    <div className="monthly-usage-banner" style={{
+                        padding: '12px 20px',
+                        marginBottom: '20px',
+                        borderRadius: '8px',
+                        backgroundColor: monthlyUsage.isUnlimited
+                            ? '#e7f3ff'
+                            : monthlyUsage.currentCount >= monthlyUsage.maxLimit
+                                ? '#fff3cd'
+                                : '#d4edda',
+                        border: `1px solid ${monthlyUsage.isUnlimited
+                            ? '#b3d9ff'
+                            : monthlyUsage.currentCount >= monthlyUsage.maxLimit
+                                ? '#ffc107'
+                                : '#c3e6cb'}`,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        flexWrap: 'wrap',
+                        gap: '10px'
+                    }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <i className={`fas ${monthlyUsage.isUnlimited ? 'fa-infinity' : 'fa-chart-line'}`}
+                                style={{ color: monthlyUsage.isUnlimited ? '#007bff' : monthlyUsage.currentCount >= monthlyUsage.maxLimit ? '#856404' : '#155724' }}></i>
+                            <span style={{
+                                fontWeight: '500',
+                                color: monthlyUsage.isUnlimited ? '#004085' : monthlyUsage.currentCount >= monthlyUsage.maxLimit ? '#856404' : '#155724'
+                            }}>
+                                {monthlyUsage.isUnlimited
+                                    ? `Unlimited service requests (${monthlyUsage.currentCount} this month)`
+                                    : `${monthlyUsage.currentCount} / ${monthlyUsage.maxLimit} service requests used this month`
+                                }
+                            </span>
+                        </div>
+                        {!monthlyUsage.isUnlimited && monthlyUsage.currentCount >= monthlyUsage.maxLimit && (
+                            <a href="/user-dashboard/subscriptions"
+                                style={{
+                                    padding: '6px 16px',
+                                    backgroundColor: '#007bff',
+                                    color: 'white',
+                                    borderRadius: '4px',
+                                    textDecoration: 'none',
+                                    fontSize: '14px',
+                                    fontWeight: '500'
+                                }}>
+                                Upgrade Plan
+                            </a>
+                        )}
+                    </div>
+                )}
                 <div className="page-header">
                     <h1>Request a Service</h1>
                     <p>Follow the steps below to submit your service request</p>

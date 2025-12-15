@@ -3,6 +3,8 @@ const router = express.Router();
 const { SubscriptionPlan, UserSubscription, User, Business } = require('../models');
 const { protect, authorize } = require('../middleware/auth');
 const stripe = require('../config/stripe');
+const getSubscriptionBenefits = require('../utils/getSubscriptionBenefits');
+const getMonthlyServiceRequestCount = require('../utils/getMonthlyServiceRequestCount');
 
 // @route   GET /api/subscriptions/plans
 // @desc    Get all active subscription plans (for business owners only)
@@ -21,11 +23,42 @@ router.get('/plans', protect, async (req, res) => {
       }
     }
 
-    const plans = await SubscriptionPlan.findAll({
-      where: { isActive: true },
-      order: [['displayOrder', 'ASC'], ['price', 'ASC']],
-      attributes: ['id', 'name', 'tier', 'price', 'billingCycle', 'description', 'features', 'leadDiscountPercent', 'priorityBoostPoints', 'isFeatured', 'hasAdvancedAnalytics']
-    });
+    // Use try-catch to handle missing columns gracefully if migration hasn't been run
+    let plans;
+    try {
+      plans = await SubscriptionPlan.findAll({
+        where: { isActive: true },
+        order: [['displayOrder', 'ASC'], ['price', 'ASC']],
+        attributes: ['id', 'name', 'tier', 'price', 'billingCycle', 'description', 'features', 'leadDiscountPercent', 'priorityBoostPoints', 'isFeatured', 'hasAdvancedAnalytics', 'maxLeadsPerMonth']
+      });
+    } catch (dbError) {
+      // If error is about missing columns, try with explicit attributes (migration not run yet)
+      if (dbError.message && dbError.message.includes('Unknown column')) {
+        console.log('Migration not run yet, using explicit attributes for subscription plans...');
+        plans = await SubscriptionPlan.findAll({
+          where: { isActive: true },
+          order: [['displayOrder', 'ASC'], ['price', 'ASC']],
+          attributes: ['id', 'name', 'tier', 'price', 'billingCycle', 'description', 'features', 'leadDiscountPercent', 'priorityBoostPoints', 'isFeatured', 'hasAdvancedAnalytics']
+        });
+        // Add default maxLeadsPerMonth for plans that don't have it in DB yet
+        plans = plans.map(plan => {
+          const planData = plan.toJSON();
+          // Set default based on tier if maxLeadsPerMonth column doesn't exist
+          if (planData.tier === 'BASIC') {
+            planData.maxLeadsPerMonth = 10;
+          } else if (planData.tier === 'PREMIUM') {
+            planData.maxLeadsPerMonth = 30;
+          } else if (planData.tier === 'PRO') {
+            planData.maxLeadsPerMonth = null; // Unlimited
+          } else {
+            planData.maxLeadsPerMonth = 10; // Default
+          }
+          return planData;
+        });
+      } else {
+        throw dbError;
+      }
+    }
 
     res.json({
       success: true,
@@ -51,7 +84,7 @@ router.get('/my-subscription', protect, async (req, res) => {
         {
           model: SubscriptionPlan,
           as: 'plan',
-          attributes: ['id', 'name', 'tier', 'price', 'billingCycle', 'description', 'features', 'leadDiscountPercent', 'priorityBoostPoints', 'isFeatured', 'hasAdvancedAnalytics']
+          attributes: ['id', 'name', 'tier', 'price', 'billingCycle', 'description', 'features', 'leadDiscountPercent', 'priorityBoostPoints', 'isFeatured', 'hasAdvancedAnalytics', 'maxLeadsPerMonth']
         }
       ]
     });
@@ -78,16 +111,51 @@ router.get('/debug-benefits', protect, async (req, res) => {
     const { getLeadCost, getLeadCostWithDiscount } = require('../config/leadPricing');
 
     // Get subscription details
-    const subscription = await UserSubscription.findOne({
-      where: { userId: req.user.id },
-      include: [
-        {
-          model: SubscriptionPlan,
-          as: 'plan',
-          attributes: ['id', 'name', 'tier', 'price', 'billingCycle', 'description', 'features', 'leadDiscountPercent', 'priorityBoostPoints', 'isFeatured', 'hasAdvancedAnalytics']
+    // Use try-catch to handle missing columns gracefully if migration hasn't been run
+    let subscription;
+    try {
+      subscription = await UserSubscription.findOne({
+        where: { userId: req.user.id },
+        include: [
+          {
+            model: SubscriptionPlan,
+            as: 'plan',
+            attributes: ['id', 'name', 'tier', 'price', 'billingCycle', 'description', 'features', 'leadDiscountPercent', 'priorityBoostPoints', 'isFeatured', 'hasAdvancedAnalytics', 'maxLeadsPerMonth']
+          }
+        ]
+      });
+    } catch (dbError) {
+      // If error is about missing columns, try with explicit attributes (migration not run yet)
+      if (dbError.message && dbError.message.includes('Unknown column')) {
+        console.log('Migration not run yet, using explicit attributes for subscription in debug...');
+        subscription = await UserSubscription.findOne({
+          where: { userId: req.user.id },
+          include: [
+            {
+              model: SubscriptionPlan,
+              as: 'plan',
+              attributes: ['id', 'name', 'tier', 'price', 'billingCycle', 'description', 'features', 'leadDiscountPercent', 'priorityBoostPoints', 'isFeatured', 'hasAdvancedAnalytics']
+            }
+          ]
+        });
+        // Add default maxLeadsPerMonth if plan exists
+        if (subscription && subscription.plan) {
+          const planData = subscription.plan.toJSON();
+          if (planData.tier === 'BASIC') {
+            planData.maxLeadsPerMonth = 10;
+          } else if (planData.tier === 'PREMIUM') {
+            planData.maxLeadsPerMonth = 30;
+          } else if (planData.tier === 'PRO') {
+            planData.maxLeadsPerMonth = null; // Unlimited
+          } else {
+            planData.maxLeadsPerMonth = 10; // Default
+          }
+          subscription.plan = planData;
         }
-      ]
-    });
+      } else {
+        throw dbError;
+      }
+    }
 
     // Get subscription benefits
     const benefits = await getSubscriptionBenefits(req.user.id);
@@ -327,7 +395,7 @@ router.post('/subscribe', protect, async (req, res) => {
           {
             model: SubscriptionPlan,
             as: 'plan',
-            attributes: ['id', 'name', 'tier', 'price', 'billingCycle', 'description', 'features', 'leadDiscountPercent', 'priorityBoostPoints', 'isFeatured', 'hasAdvancedAnalytics']
+            attributes: ['id', 'name', 'tier', 'price', 'billingCycle', 'description', 'features', 'leadDiscountPercent', 'priorityBoostPoints', 'isFeatured', 'hasAdvancedAnalytics', 'maxLeadsPerMonth']
           }
         ]
       });
@@ -354,7 +422,7 @@ router.post('/subscribe', protect, async (req, res) => {
           {
             model: SubscriptionPlan,
             as: 'plan',
-            attributes: ['id', 'name', 'tier', 'price', 'billingCycle', 'description', 'features', 'leadDiscountPercent', 'priorityBoostPoints', 'isFeatured', 'hasAdvancedAnalytics']
+            attributes: ['id', 'name', 'tier', 'price', 'billingCycle', 'description', 'features', 'leadDiscountPercent', 'priorityBoostPoints', 'isFeatured', 'hasAdvancedAnalytics', 'maxLeadsPerMonth']
           }
         ]
       });
@@ -370,6 +438,33 @@ router.post('/subscribe', protect, async (req, res) => {
     res.status(500).json({
       success: false,
       error: error.message || 'Server error'
+    });
+  }
+});
+
+// @route   GET /api/subscriptions/monthly-usage
+// @desc    Get monthly service request usage for current user
+// @access  Private
+router.get('/monthly-usage', protect, async (req, res) => {
+  try {
+    const subscriptionBenefits = await getSubscriptionBenefits(req.user.id);
+    const monthlyCount = await getMonthlyServiceRequestCount(req.user.id);
+
+    res.json({
+      success: true,
+      usage: {
+        currentCount: monthlyCount,
+        maxLimit: subscriptionBenefits.maxLeadsPerMonth,
+        isUnlimited: subscriptionBenefits.maxLeadsPerMonth === null,
+        planTier: subscriptionBenefits.tier,
+        planName: subscriptionBenefits.planName || subscriptionBenefits.tier
+      }
+    });
+  } catch (error) {
+    console.error('Get monthly usage error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Server error'
     });
   }
 });

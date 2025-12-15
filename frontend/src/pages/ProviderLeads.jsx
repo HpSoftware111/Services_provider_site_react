@@ -26,6 +26,8 @@ const ProviderLeads = () => {
         price: ''
     });
     const [rejectReason, setRejectReason] = useState('');
+    const [rejectionReason, setRejectionReason] = useState('');
+    const [rejectionReasonOther, setRejectionReasonOther] = useState('');
     const [submitting, setSubmitting] = useState(false);
     const [leadCost, setLeadCost] = useState(null);
     const [showPaymentModal, setShowPaymentModal] = useState(false);
@@ -34,10 +36,30 @@ const ProviderLeads = () => {
         paymentIntentId: null,
         leadCost: null
     });
+    const [leadUsage, setLeadUsage] = useState({
+        currentCount: 0,
+        maxLeads: null,
+        remainingLeads: null,
+        isUnlimited: false,
+        planName: 'Basic',
+        limitReached: false
+    });
 
     useEffect(() => {
         loadLeads();
+        loadLeadUsage();
     }, [statusFilter, pagination.page]);
+
+    const loadLeadUsage = async () => {
+        try {
+            const response = await api.get('/provider/lead-usage');
+            if (response.data.success) {
+                setLeadUsage(response.data.data);
+            }
+        } catch (err) {
+            console.error('Error loading lead usage:', err);
+        }
+    };
 
     const loadLeads = async () => {
         try {
@@ -81,6 +103,12 @@ const ProviderLeads = () => {
     };
 
     const handleAccept = (lead) => {
+        // Check if limit is reached before opening modal
+        if (leadUsage.limitReached && !leadUsage.isUnlimited) {
+            alert(`Monthly lead limit reached. You have accepted ${leadUsage.currentCount} leads this month. Your ${leadUsage.planName} plan allows ${leadUsage.maxLeads} leads per month. Please upgrade your plan to accept more leads.`);
+            return;
+        }
+
         setSelectedLead(lead);
         setProposalData({ description: '', price: '' });
         // Set lead cost from the lead object
@@ -98,6 +126,8 @@ const ProviderLeads = () => {
     const handleReject = (lead) => {
         setSelectedLead(lead);
         setRejectReason('');
+        setRejectionReason('');
+        setRejectionReasonOther('');
         setShowRejectModal(true);
     };
 
@@ -144,7 +174,16 @@ const ProviderLeads = () => {
             }
         } catch (err) {
             console.error('Error accepting lead:', err);
-            alert(err.response?.data?.error || 'Failed to accept lead');
+            const errorMessage = err.response?.data?.error || 'Failed to accept lead';
+
+            // If limit reached, show upgrade message
+            if (err.response?.data?.limitReached) {
+                alert(`${errorMessage}\n\nPlease upgrade your plan to accept more leads.`);
+                // Reload lead usage stats
+                loadLeadUsage();
+            } else {
+                alert(errorMessage);
+            }
         } finally {
             setSubmitting(false);
         }
@@ -153,13 +192,27 @@ const ProviderLeads = () => {
     const handleConfirmReject = async () => {
         setSubmitting(true);
         try {
+            // Validate rejection reason
+            if (!rejectionReason) {
+                alert('Please select a rejection reason');
+                return;
+            }
+
+            if (rejectionReason === 'OTHER' && !rejectionReasonOther.trim()) {
+                alert('Please provide a description when selecting "Other" as the rejection reason');
+                return;
+            }
+
             const response = await api.patch(`/provider/leads/${selectedLead.id}/reject`, {
-                reason: rejectReason || undefined
+                rejectionReason: rejectionReason,
+                rejectionReasonOther: rejectionReason === 'OTHER' ? rejectionReasonOther : null
             });
             if (response.data.success) {
                 setShowRejectModal(false);
                 setSelectedLead(null);
                 setRejectReason('');
+                setRejectionReason('');
+                setRejectionReasonOther('');
                 loadLeads();
                 alert('Lead rejected. Customer has been notified.');
             }
@@ -204,6 +257,9 @@ const ProviderLeads = () => {
         // Show success message
         alert('Payment successful! Lead accepted and proposal sent to customer.');
 
+        // Reload lead usage stats after accepting
+        await loadLeadUsage();
+
         // If current filter won't show ACCEPTED leads, switch to 'all' to show the updated lead
         // This will trigger useEffect to reload leads automatically
         if (statusFilter !== 'all' && statusFilter !== 'ACCEPTED') {
@@ -216,6 +272,7 @@ const ProviderLeads = () => {
         // Wait a moment for webhook to process, then reload again to ensure status is synced with backend
         setTimeout(async () => {
             await loadLeads();
+            await loadLeadUsage();
         }, 2000); // Wait 2 seconds for webhook to process
     };
 
@@ -313,7 +370,37 @@ const ProviderLeads = () => {
     return (
         <div className="provider-leads-container">
             <div className="leads-header">
-                <h1>My Leads</h1>
+                <div className="header-top">
+                    <h1>My Leads</h1>
+                    {leadUsage && (
+                        <div className={`lead-usage-stats ${leadUsage.limitReached ? 'limit-reached' : ''}`}>
+                            <div className="usage-info">
+                                <i className={`fas ${leadUsage.isUnlimited ? 'fa-infinity' : 'fa-chart-line'}`}></i>
+                                <span className="usage-text">
+                                    {leadUsage.isUnlimited ? (
+                                        <span>Unlimited leads</span>
+                                    ) : (
+                                        <span>
+                                            {leadUsage.currentCount} / {leadUsage.maxLeads} leads this month
+                                            {leadUsage.remainingLeads !== null && (
+                                                <span className="remaining"> ({leadUsage.remainingLeads} remaining)</span>
+                                            )}
+                                        </span>
+                                    )}
+                                </span>
+                                {leadUsage.planName && (
+                                    <span className="plan-badge">{leadUsage.planName}</span>
+                                )}
+                            </div>
+                            {leadUsage.limitReached && (
+                                <div className="limit-warning">
+                                    <i className="fas fa-exclamation-triangle"></i>
+                                    <span>Monthly limit reached. <a href="/user-dashboard/subscriptions" style={{ color: '#007bff', textDecoration: 'underline' }}>Upgrade plan</a> to accept more leads.</span>
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </div>
                 <div className="leads-filters">
                     <div className="select-wrapper">
                         <select
@@ -453,8 +540,10 @@ const ProviderLeads = () => {
                                         {lead.status === 'PENDING' && (
                                             <div className="lead-actions">
                                                 <button
-                                                    className="btn-accept"
+                                                    className={`btn-accept ${leadUsage.limitReached && !leadUsage.isUnlimited ? 'disabled' : ''}`}
                                                     onClick={() => handleAccept(lead)}
+                                                    disabled={leadUsage.limitReached && !leadUsage.isUnlimited}
+                                                    title={leadUsage.limitReached && !leadUsage.isUnlimited ? 'Monthly lead limit reached. Please upgrade your plan.' : ''}
                                                 >
                                                     <i className="fas fa-check"></i> Accept
                                                 </button>
@@ -698,18 +787,47 @@ const ProviderLeads = () => {
                             </div>
 
                             <div className="form-group">
-                                <label htmlFor="reject-reason">
-                                    Rejection Reason (Optional)
+                                <label htmlFor="rejection-reason">
+                                    Rejection Reason <span style={{ color: '#dc3545' }}>*</span>
                                 </label>
-                                <textarea
-                                    id="reject-reason"
-                                    value={rejectReason}
-                                    onChange={(e) => setRejectReason(e.target.value)}
-                                    placeholder="Optional: Provide a reason for rejection (this will be sent to the customer)"
-                                    rows={4}
+                                <select
+                                    id="rejection-reason"
+                                    value={rejectionReason}
+                                    onChange={(e) => {
+                                        setRejectionReason(e.target.value);
+                                        if (e.target.value !== 'OTHER') {
+                                            setRejectionReasonOther('');
+                                        }
+                                    }}
                                     disabled={submitting}
-                                />
+                                    required
+                                    style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid #ddd', fontSize: '14px' }}
+                                >
+                                    <option value="">-- Select a reason --</option>
+                                    <option value="TOO_FAR">Too Far</option>
+                                    <option value="TOO_EXPENSIVE">Too Expensive</option>
+                                    <option value="NOT_RELEVANT">Not Relevant Service Request</option>
+                                    <option value="OTHER">Other (Describe)</option>
+                                </select>
                             </div>
+
+                            {rejectionReason === 'OTHER' && (
+                                <div className="form-group">
+                                    <label htmlFor="rejection-reason-other">
+                                        Please describe the reason <span style={{ color: '#dc3545' }}>*</span>
+                                    </label>
+                                    <textarea
+                                        id="rejection-reason-other"
+                                        value={rejectionReasonOther}
+                                        onChange={(e) => setRejectionReasonOther(e.target.value)}
+                                        placeholder="Please provide details about why you are rejecting this lead..."
+                                        rows={4}
+                                        disabled={submitting}
+                                        required
+                                        style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid #ddd', fontSize: '14px' }}
+                                    />
+                                </div>
+                            )}
 
                             <div className="modal-warning">
                                 <i className="fas fa-exclamation-triangle"></i>

@@ -70,6 +70,14 @@ const ServiceRequest = sequelize.define('ServiceRequest', {
         type: DataTypes.JSON,
         allowNull: true,
         defaultValue: []
+    },
+    rejectionReason: {
+        type: DataTypes.ENUM('TOO_FAR', 'TOO_EXPENSIVE', 'NOT_RELEVANT', 'OTHER'),
+        allowNull: true
+    },
+    rejectionReasonOther: {
+        type: DataTypes.TEXT,
+        allowNull: true
     }
 }, {
     tableName: 'service_requests',

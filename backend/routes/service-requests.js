@@ -109,6 +109,13 @@ async function assignProvidersForRequest(serviceRequestId) {
 
                 console.log(`[assignProvidersForRequest] Checking business ${business.id} (owner: ${business.owner.id}, email: ${business.owner.email})`);
 
+                // Safety check: Exclude businesses owned by the customer who created the request
+                // This prevents providers from being assigned to their own service requests
+                if (business.owner.id === serviceRequest.customerId) {
+                    console.log(`[assignProvidersForRequest] ⚠️ Skipping business ${business.id} - owned by customer who created the request (userId: ${serviceRequest.customerId})`);
+                    return null;
+                }
+
                 // Find or create provider profile for business owner
                 // Business owners should automatically have ProviderProfiles to receive leads
                 let providerProfile = await ProviderProfile.findOne({
@@ -186,11 +193,21 @@ async function assignProvidersForRequest(serviceRequestId) {
                 }
 
                 // Subscription priority boost (add boost points if user has active subscription)
+                let isPriorityProvider = false; // Featured or Pro tier providers get leads first
                 try {
                     const subscriptionBenefits = await getSubscriptionBenefits(business.owner.id);
-                    if (subscriptionBenefits.hasActiveSubscription && subscriptionBenefits.priorityBoostPoints > 0) {
-                        score += subscriptionBenefits.priorityBoostPoints;
-                        console.log(`[assignProvidersForRequest] Added ${subscriptionBenefits.priorityBoostPoints} priority boost points for business ${business.id} (user ${business.owner.id}, tier: ${subscriptionBenefits.tier})`);
+                    if (subscriptionBenefits.hasActiveSubscription) {
+                        // Check if provider is Featured or has PRO tier (priority providers)
+                        isPriorityProvider = subscriptionBenefits.isFeatured === true || subscriptionBenefits.tier === 'PRO';
+
+                        if (subscriptionBenefits.priorityBoostPoints > 0) {
+                            score += subscriptionBenefits.priorityBoostPoints;
+                            console.log(`[assignProvidersForRequest] Added ${subscriptionBenefits.priorityBoostPoints} priority boost points for business ${business.id} (user ${business.owner.id}, tier: ${subscriptionBenefits.tier})`);
+                        }
+
+                        if (isPriorityProvider) {
+                            console.log(`[assignProvidersForRequest] ⭐ Priority provider detected: Business ${business.id} (user ${business.owner.id}, tier: ${subscriptionBenefits.tier}, isFeatured: ${subscriptionBenefits.isFeatured})`);
+                        }
                     }
                 } catch (subError) {
                     console.error(`[assignProvidersForRequest] Error getting subscription benefits for user ${business.owner.id}:`, subError);
@@ -201,15 +218,29 @@ async function assignProvidersForRequest(serviceRequestId) {
                     business,
                     providerProfile,
                     owner: business.owner,
-                    score
+                    score,
+                    isPriorityProvider // Flag to prioritize Featured/Pro providers
                 };
             })
         );
 
-        // Filter out nulls and sort by score (descending)
+        // Filter out nulls and sort by priority first, then by score (descending)
+        // Priority: Featured providers and Pro tier subscribers get leads FIRST
+        // Then the rest are sorted by score
         const validProviders = providersWithScores
             .filter(p => p !== null)
-            .sort((a, b) => b.score - a.score);
+            .sort((a, b) => {
+                // First priority: Featured providers or Pro tier subscribers
+                // If one is priority and the other isn't, priority wins
+                if (a.isPriorityProvider && !b.isPriorityProvider) {
+                    return -1; // a comes first
+                }
+                if (!a.isPriorityProvider && b.isPriorityProvider) {
+                    return 1; // b comes first
+                }
+                // If both are priority or both are not, sort by score (descending)
+                return b.score - a.score;
+            });
 
         console.log(`[assignProvidersForRequest] Found ${validProviders.length} valid providers after filtering`);
 
@@ -221,13 +252,16 @@ async function assignProvidersForRequest(serviceRequestId) {
             return { primary: null, alternatives: [] };
         }
 
-        // Select primary (highest score)
+        // Select primary (highest priority/score)
         const primary = validProviders[0];
-        console.log(`[assignProvidersForRequest] ✅ Selected primary provider: Business ID=${primary.business.id}, Owner ID=${primary.owner.id}, Score=${primary.score}`);
+        console.log(`[assignProvidersForRequest] ✅ Selected primary provider: Business ID=${primary.business.id}, Owner ID=${primary.owner.id}, Score=${primary.score}, Priority=${primary.isPriorityProvider ? 'YES (Featured/Pro)' : 'NO'}`);
 
-        // Select up to 3 alternatives (next highest scores)
+        // Select up to 3 alternatives (next highest priority/scores)
         const alternatives = validProviders.slice(1, 4);
         console.log(`[assignProvidersForRequest] Selected ${alternatives.length} alternative providers`);
+        alternatives.forEach((alt, index) => {
+            console.log(`[assignProvidersForRequest]   Alternative ${index + 1}: Business ID=${alt.business.id}, Score=${alt.score}, Priority=${alt.isPriorityProvider ? 'YES (Featured/Pro)' : 'NO'}`);
+        });
 
         return { primary, alternatives };
     } catch (error) {
@@ -301,7 +335,7 @@ router.get('/', protect, async (req, res) => {
         // Filter based on user role
         if (req.user.role === 'CUSTOMER' || req.user.role === 'user') {
             where.customerId = req.user.id;
-        } else if (req.user.role === 'PROVIDER') {
+        } else if (req.user.role === 'PROVIDER' || req.user.role === 'business_owner') {
             // Get provider profile
             const providerProfile = await ProviderProfile.findOne({
                 where: { userId: req.user.id },
@@ -360,18 +394,51 @@ router.get('/', protect, async (req, res) => {
             where.categoryId = req.query.categoryId;
         }
 
-        const { count, rows: serviceRequests } = await ServiceRequest.findAndCountAll({
-            where,
-            include: [
-                { model: User, as: 'customer', attributes: ['id', 'name', 'email', 'phone'] },
-                { model: Category, as: 'category', attributes: ['id', 'name', 'icon'] },
-                { model: SubCategory, as: 'subCategory', attributes: ['id', 'name'], required: false },
-                { model: ProviderProfile, as: 'primaryProvider', attributes: ['id', 'userId'], include: [{ model: User, as: 'user', attributes: ['id', 'name', 'email'] }], required: false }
-            ],
-            order: [['createdAt', 'DESC']],
-            limit,
-            offset
-        });
+        // Use try-catch to handle missing columns gracefully if migration hasn't been run
+        let count, serviceRequests;
+        try {
+            const result = await ServiceRequest.findAndCountAll({
+                where,
+                include: [
+                    { model: User, as: 'customer', attributes: ['id', 'name', 'email', 'phone'] },
+                    { model: Category, as: 'category', attributes: ['id', 'name', 'icon'] },
+                    { model: SubCategory, as: 'subCategory', attributes: ['id', 'name'], required: false },
+                    { model: ProviderProfile, as: 'primaryProvider', attributes: ['id', 'userId'], include: [{ model: User, as: 'user', attributes: ['id', 'name', 'email'] }], required: false }
+                ],
+                order: [['createdAt', 'DESC']],
+                limit,
+                offset
+            });
+            count = result.count;
+            serviceRequests = result.rows;
+        } catch (dbError) {
+            // If error is about missing columns, try with explicit attributes (migration not run yet)
+            if (dbError.message && dbError.message.includes('Unknown column')) {
+                console.log('Migration not run yet, using explicit attributes for service requests list...');
+                const result = await ServiceRequest.findAndCountAll({
+                    where,
+                    attributes: [
+                        'id', 'customerId', 'categoryId', 'subCategoryId', 'zipCode',
+                        'projectTitle', 'projectDescription', 'attachments', 'preferredDate',
+                        'preferredTime', 'status', 'primaryProviderId', 'selectedBusinessIds',
+                        'createdAt', 'updatedAt'
+                    ],
+                    include: [
+                        { model: User, as: 'customer', attributes: ['id', 'name', 'email', 'phone'] },
+                        { model: Category, as: 'category', attributes: ['id', 'name', 'icon'] },
+                        { model: SubCategory, as: 'subCategory', attributes: ['id', 'name'], required: false },
+                        { model: ProviderProfile, as: 'primaryProvider', attributes: ['id', 'userId'], include: [{ model: User, as: 'user', attributes: ['id', 'name', 'email'] }], required: false }
+                    ],
+                    order: [['createdAt', 'DESC']],
+                    limit,
+                    offset
+                });
+                count = result.count;
+                serviceRequests = result.rows;
+            } else {
+                throw dbError;
+            }
+        }
 
         res.json({
             success: true,
@@ -389,15 +456,15 @@ router.get('/', protect, async (req, res) => {
 
 // @route   GET /api/service-requests/my/service-requests
 // @desc    Get current user's service requests with pagination and filters
-// @access  Private (Customer only)
+// @access  Private (Customer and Provider)
 // NOTE: This route MUST be defined before /:id route to avoid route conflicts
 router.get('/my/service-requests', protect, async (req, res) => {
     try {
-        // Only allow customers to access their own requests
-        if (req.user.role !== 'CUSTOMER' && req.user.role !== 'user') {
+        // Allow customers and providers (business_owner) to access their own requests
+        if (req.user.role !== 'CUSTOMER' && req.user.role !== 'user' && req.user.role !== 'business_owner') {
             return res.status(403).json({
                 success: false,
-                error: 'Access denied. This endpoint is for customers only.'
+                error: 'Access denied. This endpoint is for customers and providers only.'
             });
         }
 
@@ -421,36 +488,83 @@ router.get('/my/service-requests', protect, async (req, res) => {
         const total = await ServiceRequest.count({ where });
 
         // Fetch service requests with related data
-        const serviceRequests = await ServiceRequest.findAll({
-            where,
-            include: [
-                {
-                    model: Category,
-                    as: 'category',
-                    attributes: ['id', 'name', 'icon']
-                },
-                {
-                    model: SubCategory,
-                    as: 'subCategory',
-                    attributes: ['id', 'name'],
-                    required: false
-                },
-                {
-                    model: ProviderProfile,
-                    as: 'primaryProvider',
-                    attributes: ['id', 'userId'],
-                    include: [{
-                        model: User,
-                        as: 'user',
-                        attributes: ['id', 'name', 'email', 'phone']
-                    }],
-                    required: false
-                }
-            ],
-            order: [['createdAt', 'DESC']],
-            limit: pageSize,
-            offset: offset
-        });
+        // Use try-catch to handle missing columns gracefully if migration hasn't been run
+        let serviceRequests;
+        try {
+            serviceRequests = await ServiceRequest.findAll({
+                where,
+                include: [
+                    {
+                        model: Category,
+                        as: 'category',
+                        attributes: ['id', 'name', 'icon']
+                    },
+                    {
+                        model: SubCategory,
+                        as: 'subCategory',
+                        attributes: ['id', 'name'],
+                        required: false
+                    },
+                    {
+                        model: ProviderProfile,
+                        as: 'primaryProvider',
+                        attributes: ['id', 'userId'],
+                        include: [{
+                            model: User,
+                            as: 'user',
+                            attributes: ['id', 'name', 'email', 'phone']
+                        }],
+                        required: false
+                    }
+                ],
+                order: [['createdAt', 'DESC']],
+                limit: pageSize,
+                offset: offset
+            });
+        } catch (dbError) {
+            // If error is about missing columns, try with explicit attributes (migration not run yet)
+            if (dbError.message && dbError.message.includes('Unknown column')) {
+                console.log('Migration not run yet, using explicit attributes...');
+                serviceRequests = await ServiceRequest.findAll({
+                    where,
+                    attributes: [
+                        'id', 'customerId', 'categoryId', 'subCategoryId', 'zipCode',
+                        'projectTitle', 'projectDescription', 'attachments', 'preferredDate',
+                        'preferredTime', 'status', 'primaryProviderId', 'selectedBusinessIds',
+                        'createdAt', 'updatedAt'
+                    ],
+                    include: [
+                        {
+                            model: Category,
+                            as: 'category',
+                            attributes: ['id', 'name', 'icon']
+                        },
+                        {
+                            model: SubCategory,
+                            as: 'subCategory',
+                            attributes: ['id', 'name'],
+                            required: false
+                        },
+                        {
+                            model: ProviderProfile,
+                            as: 'primaryProvider',
+                            attributes: ['id', 'userId'],
+                            include: [{
+                                model: User,
+                                as: 'user',
+                                attributes: ['id', 'name', 'email', 'phone']
+                            }],
+                            required: false
+                        }
+                    ],
+                    order: [['createdAt', 'DESC']],
+                    limit: pageSize,
+                    offset: offset
+                });
+            } else {
+                throw dbError;
+            }
+        }
 
         // Format response
         const data = serviceRequests.map(request => ({
@@ -487,15 +601,15 @@ router.get('/my/service-requests', protect, async (req, res) => {
 
 // @route   GET /api/service-requests/my/service-requests/:id
 // @desc    Get single service request detail for current user
-// @access  Private (Customer only)
+// @access  Private (Customer and Provider)
 // NOTE: This route MUST be defined before /:id route to avoid route conflicts
 router.get('/my/service-requests/:id', protect, async (req, res) => {
     try {
-        // Only allow customers to access their own requests
-        if (req.user.role !== 'CUSTOMER' && req.user.role !== 'user') {
+        // Allow customers and providers (business_owner) to access their own requests
+        if (req.user.role !== 'CUSTOMER' && req.user.role !== 'user' && req.user.role !== 'business_owner') {
             return res.status(403).json({
                 success: false,
-                error: 'Access denied. This endpoint is for customers only.'
+                error: 'Access denied. This endpoint is for customers and providers only.'
             });
         }
 
@@ -508,36 +622,83 @@ router.get('/my/service-requests/:id', protect, async (req, res) => {
         }
 
         // Find service request
-        const serviceRequest = await ServiceRequest.findOne({
-            where: {
-                id: requestId,
-                customerId: req.user.id
-            },
-            include: [
-                {
-                    model: Category,
-                    as: 'category',
-                    attributes: ['id', 'name', 'icon', 'description']
+        // Use try-catch to handle missing columns gracefully if migration hasn't been run
+        let serviceRequest;
+        try {
+            serviceRequest = await ServiceRequest.findOne({
+                where: {
+                    id: requestId,
+                    customerId: req.user.id
                 },
-                {
-                    model: SubCategory,
-                    as: 'subCategory',
-                    attributes: ['id', 'name', 'description'],
-                    required: false
-                },
-                {
-                    model: ProviderProfile,
-                    as: 'primaryProvider',
-                    attributes: ['id', 'userId'],
-                    include: [{
-                        model: User,
-                        as: 'user',
-                        attributes: ['id', 'name', 'email', 'phone', 'avatar']
-                    }],
-                    required: false
-                }
-            ]
-        });
+                include: [
+                    {
+                        model: Category,
+                        as: 'category',
+                        attributes: ['id', 'name', 'icon', 'description']
+                    },
+                    {
+                        model: SubCategory,
+                        as: 'subCategory',
+                        attributes: ['id', 'name', 'description'],
+                        required: false
+                    },
+                    {
+                        model: ProviderProfile,
+                        as: 'primaryProvider',
+                        attributes: ['id', 'userId'],
+                        include: [{
+                            model: User,
+                            as: 'user',
+                            attributes: ['id', 'name', 'email', 'phone', 'avatar']
+                        }],
+                        required: false
+                    }
+                ]
+            });
+        } catch (dbError) {
+            // If error is about missing columns, try with explicit attributes (migration not run yet)
+            if (dbError.message && dbError.message.includes('Unknown column')) {
+                console.log('Migration not run yet, using explicit attributes for service request detail...');
+                serviceRequest = await ServiceRequest.findOne({
+                    where: {
+                        id: requestId,
+                        customerId: req.user.id
+                    },
+                    attributes: [
+                        'id', 'customerId', 'categoryId', 'subCategoryId', 'zipCode',
+                        'projectTitle', 'projectDescription', 'attachments', 'preferredDate',
+                        'preferredTime', 'status', 'primaryProviderId', 'selectedBusinessIds',
+                        'createdAt', 'updatedAt'
+                    ],
+                    include: [
+                        {
+                            model: Category,
+                            as: 'category',
+                            attributes: ['id', 'name', 'icon', 'description']
+                        },
+                        {
+                            model: SubCategory,
+                            as: 'subCategory',
+                            attributes: ['id', 'name', 'description'],
+                            required: false
+                        },
+                        {
+                            model: ProviderProfile,
+                            as: 'primaryProvider',
+                            attributes: ['id', 'userId'],
+                            include: [{
+                                model: User,
+                                as: 'user',
+                                attributes: ['id', 'name', 'email', 'phone', 'avatar']
+                            }],
+                            required: false
+                        }
+                    ]
+                });
+            } else {
+                throw dbError;
+            }
+        }
 
         if (!serviceRequest) {
             return res.status(404).json({
@@ -551,32 +712,75 @@ router.get('/my/service-requests/:id', protect, async (req, res) => {
         // Note: Lead, Proposal, Business, ProviderProfile, and Op are already imported at the top
 
         // Get all leads (we'll filter by metadata below to find ones for this service request)
-        const allLeads = await Lead.findAll({
-            where: {
-                // Get leads for this customer, or we'll filter by metadata
-                customerId: req.user.id
-            },
-            include: [
-                {
-                    model: User,
-                    as: 'provider',
-                    attributes: ['id', 'name', 'email'],
-                    required: false,
-                    include: [{
-                        model: ProviderProfile,
-                        as: 'providerProfile',
-                        attributes: ['id', 'userId'],
-                        required: false
-                    }]
+        // Use try-catch to handle missing columns gracefully if migration hasn't been run
+        let allLeads;
+        try {
+            allLeads = await Lead.findAll({
+                where: {
+                    // Get leads for this customer, or we'll filter by metadata
+                    customerId: req.user.id
                 },
-                {
-                    model: Business,
-                    as: 'business',
-                    attributes: ['id', 'name'],
-                    required: false
-                }
-            ]
-        });
+                include: [
+                    {
+                        model: User,
+                        as: 'provider',
+                        attributes: ['id', 'name', 'email'],
+                        required: false,
+                        include: [{
+                            model: ProviderProfile,
+                            as: 'providerProfile',
+                            attributes: ['id', 'userId'],
+                            required: false
+                        }]
+                    },
+                    {
+                        model: Business,
+                        as: 'business',
+                        attributes: ['id', 'name'],
+                        required: false
+                    }
+                ]
+            });
+        } catch (dbError) {
+            // If error is about missing columns, try with explicit attributes (migration not run yet)
+            if (dbError.message && dbError.message.includes('Unknown column')) {
+                console.log('Migration not run yet, using explicit attributes for leads in service request detail...');
+                allLeads = await Lead.findAll({
+                    where: {
+                        customerId: req.user.id
+                    },
+                    attributes: [
+                        'id', 'customerId', 'businessId', 'providerId', 'serviceType', 'categoryId',
+                        'locationCity', 'locationState', 'locationPostalCode', 'description', 'budgetRange',
+                        'preferredContact', 'customerName', 'customerEmail', 'customerPhone', 'membershipTierRequired',
+                        'status', 'stripePaymentIntentId', 'leadCost', 'statusHistory', 'metadata', 'routedAt',
+                        'createdAt', 'updatedAt'
+                    ],
+                    include: [
+                        {
+                            model: User,
+                            as: 'provider',
+                            attributes: ['id', 'name', 'email'],
+                            required: false,
+                            include: [{
+                                model: ProviderProfile,
+                                as: 'providerProfile',
+                                attributes: ['id', 'userId'],
+                                required: false
+                            }]
+                        },
+                        {
+                            model: Business,
+                            as: 'business',
+                            attributes: ['id', 'name'],
+                            required: false
+                        }
+                    ]
+                });
+            } else {
+                throw dbError;
+            }
+        }
 
         // Filter leads that belong to this service request
         const serviceRequestLeads = [];
@@ -893,14 +1097,14 @@ router.get('/my/service-requests/:id', protect, async (req, res) => {
 
 // @route   PATCH /api/service-requests/my/service-requests/:id/cancel
 // @desc    Cancel a service request
-// @access  Private (Customer only)
+// @access  Private (Customer and Provider)
 router.patch('/my/service-requests/:id/cancel', protect, async (req, res) => {
     try {
-        // Only allow customers to cancel their own requests
-        if (req.user.role !== 'CUSTOMER' && req.user.role !== 'user') {
+        // Allow customers and providers (business_owner) to cancel their own requests
+        if (req.user.role !== 'CUSTOMER' && req.user.role !== 'user' && req.user.role !== 'business_owner') {
             return res.status(403).json({
                 success: false,
-                error: 'Access denied. This endpoint is for customers only.'
+                error: 'Access denied. This endpoint is for customers and providers only.'
             });
         }
 
@@ -936,14 +1140,34 @@ router.patch('/my/service-requests/:id/cancel', protect, async (req, res) => {
             });
         }
 
+        // Get optional rejection reason from request body
+        const { rejectionReason, rejectionReasonOther } = req.body;
+
         // Update status using update() method to ensure it's saved correctly
         console.log('Cancelling service request:', serviceRequest.id);
         console.log('Current status:', serviceRequest.status);
         console.log('Setting status to: CLOSED');
 
-        await serviceRequest.update({
-            status: 'CLOSED'
-        });
+        // Use try-catch to handle missing columns gracefully if migration hasn't been run
+        try {
+            await serviceRequest.update({
+                status: 'CLOSED',
+                rejectionReason: rejectionReason || null,
+                rejectionReasonOther: rejectionReason === 'OTHER' ? rejectionReasonOther : null
+            });
+        } catch (updateError) {
+            // If error is about missing columns, only update status (migration not run yet)
+            if (updateError.message && updateError.message.includes('Unknown column')) {
+                console.log('Migration not run yet, updating only status field...');
+                await serviceRequest.update({
+                    status: 'CLOSED'
+                });
+                // Log a warning that rejection reasons weren't saved
+                console.warn('⚠️ Rejection reasons provided but not saved - migration not run yet');
+            } else {
+                throw updateError;
+            }
+        }
 
         // Reload to get the updated status
         await serviceRequest.reload();
@@ -1014,14 +1238,14 @@ router.patch('/my/service-requests/:id/cancel', protect, async (req, res) => {
 
 // @route   POST /api/service-requests/my/service-requests/:id/proposals/:proposalId/create-payment-intent
 // @desc    Create Stripe Payment Intent for proposal acceptance
-// @access  Private (Customer only)
+// @access  Private (Customer and Provider)
 router.post('/my/service-requests/:id/proposals/:proposalId/create-payment-intent', protect, async (req, res) => {
     try {
-        // Only allow customers
-        if (req.user.role !== 'CUSTOMER' && req.user.role !== 'user') {
+        // Allow customers and providers (business_owner) to create payment intents for their requests
+        if (req.user.role !== 'CUSTOMER' && req.user.role !== 'user' && req.user.role !== 'business_owner') {
             return res.status(403).json({
                 success: false,
-                error: 'Access denied. This endpoint is for customers only.'
+                error: 'Access denied. This endpoint is for customers and providers only.'
             });
         }
 
@@ -1074,20 +1298,51 @@ router.post('/my/service-requests/:id/proposals/:proposalId/create-payment-inten
 
             // Find the lead and get pending proposal from metadata
             // Note: Lead.providerId refers to User.id (not ProviderProfile.id)
-            const lead = await Lead.findOne({
-                where: {
-                    id: leadId
-                    // Don't filter by customerId - leads might not have it set
-                },
-                include: [
-                    {
-                        model: User,
-                        as: 'provider', // Lead.providerId -> User.id
-                        attributes: ['id', 'name', 'email'],
-                        required: false
-                    }
-                ]
-            });
+            // Use try-catch to handle missing columns gracefully if migration hasn't been run
+            let lead;
+            try {
+                lead = await Lead.findOne({
+                    where: {
+                        id: leadId
+                        // Don't filter by customerId - leads might not have it set
+                    },
+                    include: [
+                        {
+                            model: User,
+                            as: 'provider', // Lead.providerId -> User.id
+                            attributes: ['id', 'name', 'email'],
+                            required: false
+                        }
+                    ]
+                });
+            } catch (dbError) {
+                // If error is about missing columns, try with explicit attributes (migration not run yet)
+                if (dbError.message && dbError.message.includes('Unknown column')) {
+                    console.log('Migration not run yet, using explicit attributes for lead in create payment intent...');
+                    lead = await Lead.findOne({
+                        where: {
+                            id: leadId
+                        },
+                        attributes: [
+                            'id', 'customerId', 'businessId', 'providerId', 'serviceType', 'categoryId',
+                            'locationCity', 'locationState', 'locationPostalCode', 'description', 'budgetRange',
+                            'preferredContact', 'customerName', 'customerEmail', 'customerPhone', 'membershipTierRequired',
+                            'status', 'stripePaymentIntentId', 'leadCost', 'statusHistory', 'metadata', 'routedAt',
+                            'createdAt', 'updatedAt'
+                        ],
+                        include: [
+                            {
+                                model: User,
+                                as: 'provider',
+                                attributes: ['id', 'name', 'email'],
+                                required: false
+                            }
+                        ]
+                    });
+                } else {
+                    throw dbError;
+                }
+            }
 
             if (!lead) {
                 return res.status(404).json({
@@ -1454,14 +1709,14 @@ router.post('/my/service-requests/:id/proposals/:proposalId/create-payment-inten
 
 // @route   PATCH /api/service-requests/my/service-requests/:id/approve
 // @desc    Approve completed work
-// @access  Private (Customer only)
+// @access  Private (Customer and Provider)
 router.patch('/my/service-requests/:id/approve', protect, async (req, res) => {
     try {
-        // Only allow customers
-        if (req.user.role !== 'CUSTOMER' && req.user.role !== 'user') {
+        // Allow customers and providers (business_owner) to approve work on their requests
+        if (req.user.role !== 'CUSTOMER' && req.user.role !== 'user' && req.user.role !== 'business_owner') {
             return res.status(403).json({
                 success: false,
-                error: 'Access denied. This endpoint is for customers only.'
+                error: 'Access denied. This endpoint is for customers and providers only.'
             });
         }
 
@@ -1672,14 +1927,14 @@ router.patch('/my/service-requests/:id/approve', protect, async (req, res) => {
 
 // @route   GET /api/service-requests/my/service-requests/:id/review-status
 // @desc    Check if review is available and get existing review
-// @access  Private (Customer only)
+// @access  Private (Customer and Provider)
 router.get('/my/service-requests/:id/review-status', protect, async (req, res) => {
     try {
-        // Only allow customers
-        if (req.user.role !== 'CUSTOMER' && req.user.role !== 'user') {
+        // Allow customers and providers (business_owner) to check review status for their requests
+        if (req.user.role !== 'CUSTOMER' && req.user.role !== 'user' && req.user.role !== 'business_owner') {
             return res.status(403).json({
                 success: false,
-                error: 'Access denied. This endpoint is for customers only.'
+                error: 'Access denied. This endpoint is for customers and providers only.'
             });
         }
 
@@ -1773,14 +2028,14 @@ router.get('/my/service-requests/:id/review-status', protect, async (req, res) =
 
 // @route   GET /api/service-requests/my/service-requests/:id/review
 // @desc    Get existing review for a service request
-// @access  Private (Customer only)
+// @access  Private (Customer and Provider)
 router.get('/my/service-requests/:id/review', protect, async (req, res) => {
     try {
-        // Only allow customers
-        if (req.user.role !== 'CUSTOMER' && req.user.role !== 'user') {
+        // Allow customers and providers (business_owner) to get reviews for their requests
+        if (req.user.role !== 'CUSTOMER' && req.user.role !== 'user' && req.user.role !== 'business_owner') {
             return res.status(403).json({
                 success: false,
-                error: 'Access denied. This endpoint is for customers only.'
+                error: 'Access denied. This endpoint is for customers and providers only.'
             });
         }
 
@@ -1927,14 +2182,14 @@ router.get('/my/service-requests/:id/review', protect, async (req, res) => {
 
 // @route   POST /api/service-requests/my/service-requests/:id/review
 // @desc    Submit review for completed and approved work
-// @access  Private (Customer only)
+// @access  Private (Customer and Provider)
 router.post('/my/service-requests/:id/review', protect, async (req, res) => {
     try {
-        // Only allow customers
-        if (req.user.role !== 'CUSTOMER' && req.user.role !== 'user') {
+        // Allow customers and providers (business_owner) to submit reviews for their requests
+        if (req.user.role !== 'CUSTOMER' && req.user.role !== 'user' && req.user.role !== 'business_owner') {
             return res.status(403).json({
                 success: false,
-                error: 'Access denied. This endpoint is for customers only.'
+                error: 'Access denied. This endpoint is for customers and providers only.'
             });
         }
 
@@ -2544,14 +2799,14 @@ router.post('/my/service-requests/:id/review', protect, async (req, res) => {
 
 // @route   GET /api/service-requests/my/service-requests/:id/proposals/:proposalId/payment-status
 // @desc    Get payment status for a proposal
-// @access  Private (Customer only)
+// @access  Private (Customer and Provider)
 router.get('/my/service-requests/:id/proposals/:proposalId/payment-status', protect, async (req, res) => {
     try {
-        // Only allow customers
-        if (req.user.role !== 'CUSTOMER' && req.user.role !== 'user') {
+        // Allow customers and providers (business_owner) to get payment status for their requests
+        if (req.user.role !== 'CUSTOMER' && req.user.role !== 'user' && req.user.role !== 'business_owner') {
             return res.status(403).json({
                 success: false,
-                error: 'Access denied. This endpoint is for customers only.'
+                error: 'Access denied. This endpoint is for customers and providers only.'
             });
         }
 
@@ -2649,14 +2904,14 @@ router.get('/my/service-requests/:id/proposals/:proposalId/payment-status', prot
 
 // @route   POST /api/service-requests/my/service-requests/:id/proposals/:proposalId/accept
 // @desc    Accept proposal after payment verification
-// @access  Private (Customer only)
+// @access  Private (Customer and Provider)
 router.post('/my/service-requests/:id/proposals/:proposalId/accept', protect, async (req, res) => {
     try {
-        // Only allow customers
-        if (req.user.role !== 'CUSTOMER' && req.user.role !== 'user') {
+        // Allow customers and providers (business_owner) to accept proposals for their requests
+        if (req.user.role !== 'CUSTOMER' && req.user.role !== 'user' && req.user.role !== 'business_owner') {
             return res.status(403).json({
                 success: false,
-                error: 'Access denied. This endpoint is for customers only.'
+                error: 'Access denied. This endpoint is for customers and providers only.'
             });
         }
 
@@ -3282,14 +3537,34 @@ router.post('/my/service-requests/:id/proposals/:proposalId/accept', protect, as
 
 // @route   PATCH /api/service-requests/my/service-requests/:id/proposals/:proposalId/reject
 // @desc    Reject a proposal (no payment required)
-// @access  Private (Customer only)
+// @access  Private (Customer and Provider)
 router.patch('/my/service-requests/:id/proposals/:proposalId/reject', protect, async (req, res) => {
     try {
-        // Only allow customers
-        if (req.user.role !== 'CUSTOMER' && req.user.role !== 'user') {
+        // Allow customers and providers (business_owner) to reject proposals for their requests
+        if (req.user.role !== 'CUSTOMER' && req.user.role !== 'user' && req.user.role !== 'business_owner') {
             return res.status(403).json({
                 success: false,
-                error: 'Access denied. This endpoint is for customers only.'
+                error: 'Access denied. This endpoint is for customers and providers only.'
+            });
+        }
+
+        // Get rejection reason from request body
+        const { rejectionReason, rejectionReasonOther } = req.body;
+
+        // Validate rejection reason
+        const validReasons = ['TOO_FAR', 'TOO_EXPENSIVE', 'NOT_RELEVANT', 'OTHER'];
+        if (rejectionReason && !validReasons.includes(rejectionReason)) {
+            return res.status(400).json({
+                success: false,
+                error: 'Invalid rejection reason. Must be one of: TOO_FAR, TOO_EXPENSIVE, NOT_RELEVANT, OTHER'
+            });
+        }
+
+        // If reason is OTHER, rejectionReasonOther is required
+        if (rejectionReason === 'OTHER' && (!rejectionReasonOther || !rejectionReasonOther.trim())) {
+            return res.status(400).json({
+                success: false,
+                error: 'Please provide a description when selecting "Other" as the rejection reason'
             });
         }
 
@@ -3344,19 +3619,50 @@ router.patch('/my/service-requests/:id/proposals/:proposalId/reject', protect, a
             }
 
             // Find the lead
-            const lead = await Lead.findOne({
-                where: {
-                    id: leadId
-                },
-                include: [
-                    {
-                        model: User,
-                        as: 'provider',
-                        attributes: ['id', 'name', 'email'],
-                        required: false
-                    }
-                ]
-            });
+            // Use try-catch to handle missing columns gracefully if migration hasn't been run
+            let lead;
+            try {
+                lead = await Lead.findOne({
+                    where: {
+                        id: leadId
+                    },
+                    include: [
+                        {
+                            model: User,
+                            as: 'provider',
+                            attributes: ['id', 'name', 'email'],
+                            required: false
+                        }
+                    ]
+                });
+            } catch (dbError) {
+                // If error is about missing columns, try with explicit attributes (migration not run yet)
+                if (dbError.message && dbError.message.includes('Unknown column')) {
+                    console.log('Migration not run yet, using explicit attributes for lead in reject proposal...');
+                    lead = await Lead.findOne({
+                        where: {
+                            id: leadId
+                        },
+                        attributes: [
+                            'id', 'customerId', 'businessId', 'providerId', 'serviceType', 'categoryId',
+                            'locationCity', 'locationState', 'locationPostalCode', 'description', 'budgetRange',
+                            'preferredContact', 'customerName', 'customerEmail', 'customerPhone', 'membershipTierRequired',
+                            'status', 'stripePaymentIntentId', 'leadCost', 'statusHistory', 'metadata', 'routedAt',
+                            'createdAt', 'updatedAt'
+                        ],
+                        include: [
+                            {
+                                model: User,
+                                as: 'provider',
+                                attributes: ['id', 'name', 'email'],
+                                required: false
+                            }
+                        ]
+                    });
+                } else {
+                    throw dbError;
+                }
+            }
 
             if (!lead) {
                 return res.status(404).json({
@@ -3438,6 +3744,14 @@ router.patch('/my/service-requests/:id/proposals/:proposalId/reject', protect, a
                 // Update existing proposal
                 if (proposal.status === 'SENT') {
                     proposal.status = 'REJECTED';
+                    // Try to set rejection reasons, but handle gracefully if columns don't exist
+                    try {
+                        proposal.rejectionReason = rejectionReason || null;
+                        proposal.rejectionReasonOther = rejectionReason === 'OTHER' ? rejectionReasonOther : null;
+                    } catch (reasonError) {
+                        // If setting rejection reasons fails, just log and continue
+                        console.log('Could not set rejection reasons (migration may not be run yet):', reasonError.message);
+                    }
                     await proposal.save();
                     proposalId = proposal.id;
 
@@ -3504,7 +3818,29 @@ router.patch('/my/service-requests/:id/proposals/:proposalId/reject', protect, a
 
             // Update proposal status
             proposal.status = 'REJECTED';
-            await proposal.save();
+            // Try to set rejection reasons, but handle gracefully if columns don't exist
+            try {
+                proposal.rejectionReason = rejectionReason || null;
+                proposal.rejectionReasonOther = rejectionReason === 'OTHER' ? rejectionReasonOther : null;
+            } catch (reasonError) {
+                // If setting rejection reasons fails, just log and continue
+                console.log('Could not set rejection reasons (migration may not be run yet):', reasonError.message);
+            }
+            // Use try-catch for save() to handle missing columns gracefully
+            try {
+                await proposal.save();
+            } catch (saveError) {
+                // If error is about missing columns, only update status (migration not run yet)
+                if (saveError.message && saveError.message.includes('Unknown column')) {
+                    console.log('Migration not run yet, updating only status field...');
+                    proposal.rejectionReason = undefined;
+                    proposal.rejectionReasonOther = undefined;
+                    await proposal.save();
+                    console.warn('⚠️ Rejection reasons provided but not saved - migration not run yet');
+                } else {
+                    throw saveError;
+                }
+            }
             proposalId = proposal.id;
             providerProfile = proposal.provider;
             providerUser = proposal.provider?.user;
@@ -3610,6 +3946,20 @@ router.patch('/my/service-requests/:id/proposals/:proposalId/reject', protect, a
                                 <strong>Status:</strong> <span style="color: #dc3545; font-weight: 600;">REJECTED</span>
                             </p>
                         </div>
+                        ${rejectionReason ? `
+                        <div style="background-color: #fff3cd; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #ffc107;">
+                            <h3 style="margin-top: 0; color: #856404;">Rejection Reason</h3>
+                            <p style="margin: 5px 0; color: #856404;">
+                                <strong>Reason:</strong> ${rejectionReason === 'TOO_FAR' ? 'Too Far' :
+                            rejectionReason === 'TOO_EXPENSIVE' ? 'Too Expensive' :
+                                rejectionReason === 'NOT_RELEVANT' ? 'Not Relevant Service Request' :
+                                    'Other'}
+                            </p>
+                            ${rejectionReason === 'OTHER' && rejectionReasonOther ? `
+                            <p style="margin: 5px 0; color: #856404; white-space: pre-wrap;"><strong>Details:</strong> ${rejectionReasonOther}</p>
+                            ` : ''}
+                        </div>
+                        ` : ''}
                         <p style="color: #333; font-size: 16px; line-height: 1.6;">
                             Don't worry! You'll continue to receive new leads and opportunities. Keep up the great work!
                         </p>
@@ -3663,14 +4013,14 @@ router.patch('/my/service-requests/:id/proposals/:proposalId/reject', protect, a
 
 // @route   PATCH /api/service-requests/my/service-requests/:id
 // @desc    Update a service request (only allowed for early statuses)
-// @access  Private (Customer only)
+// @access  Private (Customer and Provider)
 router.patch('/my/service-requests/:id', protect, async (req, res) => {
     try {
-        // Only allow customers to update their own requests
-        if (req.user.role !== 'CUSTOMER' && req.user.role !== 'user') {
+        // Allow customers and providers (business_owner) to update their own requests
+        if (req.user.role !== 'CUSTOMER' && req.user.role !== 'user' && req.user.role !== 'business_owner') {
             return res.status(403).json({
                 success: false,
-                error: 'Access denied. This endpoint is for customers only.'
+                error: 'Access denied. This endpoint is for customers and providers only.'
             });
         }
 

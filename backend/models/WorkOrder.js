@@ -22,6 +22,14 @@ const WorkOrder = sequelize.define('WorkOrder', {
     completedAt: {
         type: DataTypes.DATE,
         allowNull: true
+    },
+    rejectionReason: {
+        type: DataTypes.ENUM('TOO_FAR', 'TOO_EXPENSIVE', 'NOT_RELEVANT', 'OTHER'),
+        allowNull: true
+    },
+    rejectionReasonOther: {
+        type: DataTypes.TEXT,
+        allowNull: true
     }
 }, {
     tableName: 'work_orders',

@@ -1,9 +1,14 @@
 /**
  * Migration Script: Rename Subscription Plans
  * 
- * Renames existing subscription plans:
- * - "Pro Plan" → "Growth Plan"
- * - "Premium Plan" → "Elite Plan"
+ * Renames existing subscription plans to match correct naming:
+ * - "Growth Plan" (PREMIUM tier) → "Premium Plan"
+ * - "Elite Plan" (PRO tier) → "Pro Plan"
+ * 
+ * Correct plan structure:
+ * - Basic Plan (BASIC tier)
+ * - Premium Plan (PREMIUM tier) - 30 leads/month
+ * - Pro Plan (PRO tier) - Unlimited leads/month
  * 
  * Usage: node backend/scripts/rename-subscription-plans.js
  */
@@ -19,22 +24,7 @@ async function renameSubscriptionPlans() {
     await sequelize.authenticate();
     console.log('✅ Database connection established\n');
 
-    // Find Pro Plan
-    const proPlan = await SubscriptionPlan.findOne({
-      where: {
-        tier: 'PRO'
-      }
-    });
-
-    if (proPlan) {
-      const oldName = proPlan.name;
-      await proPlan.update({ name: 'Growth Plan' });
-      console.log(`✅ Renamed: "${oldName}" → "Growth Plan" (tier: PRO, discount: ${proPlan.leadDiscountPercent}%)`);
-    } else {
-      console.log('⚠️  Pro Plan (tier: PRO) not found');
-    }
-
-    // Find Premium Plan
+    // Find PREMIUM tier plan (should be "Premium Plan", previously "Growth Plan")
     const premiumPlan = await SubscriptionPlan.findOne({
       where: {
         tier: 'PREMIUM'
@@ -43,10 +33,33 @@ async function renameSubscriptionPlans() {
 
     if (premiumPlan) {
       const oldName = premiumPlan.name;
-      await premiumPlan.update({ name: 'Elite Plan' });
-      console.log(`✅ Renamed: "${oldName}" → "Elite Plan" (tier: PREMIUM, discount: ${premiumPlan.leadDiscountPercent}%)`);
+      if (oldName !== 'Premium Plan') {
+        await premiumPlan.update({ name: 'Premium Plan' });
+        console.log(`✅ Renamed: "${oldName}" → "Premium Plan" (tier: PREMIUM, discount: ${premiumPlan.leadDiscountPercent}%)`);
+      } else {
+        console.log(`✓ Premium Plan (tier: PREMIUM) already correctly named`);
+      }
     } else {
       console.log('⚠️  Premium Plan (tier: PREMIUM) not found');
+    }
+
+    // Find PRO tier plan (should be "Pro Plan", previously "Elite Plan")
+    const proPlan = await SubscriptionPlan.findOne({
+      where: {
+        tier: 'PRO'
+      }
+    });
+
+    if (proPlan) {
+      const oldName = proPlan.name;
+      if (oldName !== 'Pro Plan') {
+        await proPlan.update({ name: 'Pro Plan' });
+        console.log(`✅ Renamed: "${oldName}" → "Pro Plan" (tier: PRO, discount: ${proPlan.leadDiscountPercent}%)`);
+      } else {
+        console.log(`✓ Pro Plan (tier: PRO) already correctly named`);
+      }
+    } else {
+      console.log('⚠️  Pro Plan (tier: PRO) not found');
     }
 
     // Verify all plans have correct discounts

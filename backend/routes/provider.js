@@ -8,6 +8,59 @@ const sendEmail = require('../utils/sendEmail');
 const stripe = require('../config/stripe');
 const { getLeadCost, getLeadCostWithDiscount } = require('../config/leadPricing');
 const getSubscriptionBenefits = require('../utils/getSubscriptionBenefits');
+const getMonthlyAcceptedLeadsCount = require('../utils/getMonthlyAcceptedLeadsCount');
+
+// @route   GET /api/provider/lead-usage
+// @desc    Get provider's monthly lead usage statistics
+// @access  Private (Provider only)
+router.get('/lead-usage', protect, async (req, res) => {
+    try {
+        // Get provider profile
+        const providerProfile = await ProviderProfile.findOne({
+            where: { userId: req.user.id },
+            attributes: ['id', 'userId']
+        });
+
+        if (!providerProfile) {
+            return res.status(404).json({
+                success: false,
+                error: 'Provider profile not found'
+            });
+        }
+
+        // Get subscription benefits
+        const subscriptionBenefits = await getSubscriptionBenefits(req.user.id);
+
+        // Get current month's accepted leads count
+        const currentMonthCount = await getMonthlyAcceptedLeadsCount(req.user.id);
+
+        // Calculate remaining leads
+        const maxLeads = subscriptionBenefits.maxLeadsPerMonth;
+        const remainingLeads = maxLeads !== null
+            ? Math.max(0, maxLeads - currentMonthCount)
+            : null; // null means unlimited
+
+        res.json({
+            success: true,
+            data: {
+                currentCount: currentMonthCount,
+                maxLeads: maxLeads,
+                remainingLeads: remainingLeads,
+                isUnlimited: maxLeads === null,
+                planName: subscriptionBenefits.planName || subscriptionBenefits.tier,
+                tier: subscriptionBenefits.tier,
+                hasActiveSubscription: subscriptionBenefits.hasActiveSubscription,
+                limitReached: maxLeads !== null && currentMonthCount >= maxLeads
+            }
+        });
+    } catch (error) {
+        console.error('Get lead usage error:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message || 'Server error'
+        });
+    }
+});
 
 // @route   GET /api/provider/leads
 // @desc    Get all leads for the logged-in provider
@@ -77,33 +130,81 @@ router.get('/leads', protect, async (req, res) => {
         }
 
         // Query leads from leads table with includes
+        // Use try-catch to handle missing columns gracefully if migration hasn't been run
         console.log(`[Provider Leads] Querying leads with where clause:`, JSON.stringify(where, null, 2));
-        const { count, rows: leads } = await Lead.findAndCountAll({
-            where,
-            include: [
-                {
-                    model: Category,
-                    as: 'category',
-                    attributes: ['id', 'name', 'icon'],
-                    required: false
-                },
-                {
-                    model: User,
-                    as: 'customer',
-                    attributes: ['id', 'name', 'email', 'firstName', 'lastName'],
-                    required: false
-                },
-                {
-                    model: Business,
-                    as: 'business',
-                    attributes: ['id', 'name'],
-                    required: false
-                }
-            ],
-            order: [['createdAt', 'DESC']],
-            limit: pageSize,
-            offset: offset
-        });
+        let count, leads;
+        try {
+            const result = await Lead.findAndCountAll({
+                where,
+                include: [
+                    {
+                        model: Category,
+                        as: 'category',
+                        attributes: ['id', 'name', 'icon'],
+                        required: false
+                    },
+                    {
+                        model: User,
+                        as: 'customer',
+                        attributes: ['id', 'name', 'email', 'firstName', 'lastName'],
+                        required: false
+                    },
+                    {
+                        model: Business,
+                        as: 'business',
+                        attributes: ['id', 'name'],
+                        required: false
+                    }
+                ],
+                order: [['createdAt', 'DESC']],
+                limit: pageSize,
+                offset: offset
+            });
+            count = result.count;
+            leads = result.rows;
+        } catch (dbError) {
+            // If error is about missing columns, try with explicit attributes (migration not run yet)
+            if (dbError.message && dbError.message.includes('Unknown column')) {
+                console.log('Migration not run yet, using explicit attributes for leads...');
+                const result = await Lead.findAndCountAll({
+                    where,
+                    attributes: [
+                        'id', 'customerId', 'businessId', 'providerId', 'serviceType', 'categoryId',
+                        'locationCity', 'locationState', 'locationPostalCode', 'description', 'budgetRange',
+                        'preferredContact', 'customerName', 'customerEmail', 'customerPhone', 'membershipTierRequired',
+                        'status', 'stripePaymentIntentId', 'leadCost', 'statusHistory', 'metadata', 'routedAt',
+                        'createdAt', 'updatedAt'
+                    ],
+                    include: [
+                        {
+                            model: Category,
+                            as: 'category',
+                            attributes: ['id', 'name', 'icon'],
+                            required: false
+                        },
+                        {
+                            model: User,
+                            as: 'customer',
+                            attributes: ['id', 'name', 'email', 'firstName', 'lastName'],
+                            required: false
+                        },
+                        {
+                            model: Business,
+                            as: 'business',
+                            attributes: ['id', 'name'],
+                            required: false
+                        }
+                    ],
+                    order: [['createdAt', 'DESC']],
+                    limit: pageSize,
+                    offset: offset
+                });
+                count = result.count;
+                leads = result.rows;
+            } else {
+                throw dbError;
+            }
+        }
 
         console.log(`[Provider Leads] Found ${count} leads, returning ${leads.length} leads`);
 
@@ -386,12 +487,36 @@ router.patch('/leads/:id/accept', protect, async (req, res) => {
         }
 
         // Find the lead
-        const lead = await Lead.findOne({
-            where: {
-                id: req.params.id,
-                providerId: req.user.id // User ID, not ProviderProfile ID
+        // Use try-catch to handle missing columns gracefully if migration hasn't been run
+        let lead;
+        try {
+            lead = await Lead.findOne({
+                where: {
+                    id: req.params.id,
+                    providerId: req.user.id // User ID, not ProviderProfile ID
+                }
+            });
+        } catch (dbError) {
+            // If error is about missing columns, try with explicit attributes (migration not run yet)
+            if (dbError.message && dbError.message.includes('Unknown column')) {
+                console.log('Migration not run yet, using explicit attributes for lead detail...');
+                lead = await Lead.findOne({
+                    where: {
+                        id: req.params.id,
+                        providerId: req.user.id
+                    },
+                    attributes: [
+                        'id', 'customerId', 'businessId', 'providerId', 'serviceType', 'categoryId',
+                        'locationCity', 'locationState', 'locationPostalCode', 'description', 'budgetRange',
+                        'preferredContact', 'customerName', 'customerEmail', 'customerPhone', 'membershipTierRequired',
+                        'status', 'stripePaymentIntentId', 'leadCost', 'statusHistory', 'metadata', 'routedAt',
+                        'createdAt', 'updatedAt'
+                    ]
+                });
+            } else {
+                throw dbError;
             }
-        });
+        }
 
         if (!lead) {
             return res.status(404).json({
@@ -471,8 +596,28 @@ router.patch('/leads/:id/accept', protect, async (req, res) => {
             planName: subscriptionBenefits.planName,
             tier: subscriptionBenefits.tier,
             leadDiscountPercent: subscriptionBenefits.leadDiscountPercent,
-            priorityBoostPoints: subscriptionBenefits.priorityBoostPoints
+            priorityBoostPoints: subscriptionBenefits.priorityBoostPoints,
+            maxLeadsPerMonth: subscriptionBenefits.maxLeadsPerMonth
         });
+
+        // Check monthly lead limit (only for providers, not customers)
+        // Membership is only for providers, so we check limits here
+        if (subscriptionBenefits.maxLeadsPerMonth !== null) {
+            // Plan has a limit (not unlimited)
+            const currentMonthCount = await getMonthlyAcceptedLeadsCount(req.user.id);
+            console.log(`[Accept Lead] Current monthly accepted leads: ${currentMonthCount} / ${subscriptionBenefits.maxLeadsPerMonth}`);
+
+            if (currentMonthCount >= subscriptionBenefits.maxLeadsPerMonth) {
+                return res.status(403).json({
+                    success: false,
+                    error: `Monthly lead limit reached. You have accepted ${currentMonthCount} leads this month. Your ${subscriptionBenefits.planName || subscriptionBenefits.tier} plan allows ${subscriptionBenefits.maxLeadsPerMonth} leads per month. Please upgrade your plan to accept more leads.`,
+                    limitReached: true,
+                    currentCount: currentMonthCount,
+                    maxLeads: subscriptionBenefits.maxLeadsPerMonth,
+                    planName: subscriptionBenefits.planName || subscriptionBenefits.tier
+                });
+            }
+        }
 
         // Calculate lead cost with subscription discount (in cents)
         // Handle null/undefined categoryId gracefully
@@ -693,12 +838,36 @@ router.patch('/leads/:id/reject', protect, async (req, res) => {
 
         // Find the lead
         // Note: Lead doesn't have direct association with ServiceRequest (it's in metadata)
-        const lead = await Lead.findOne({
-            where: {
-                id: req.params.id,
-                providerId: req.user.id // User ID, not ProviderProfile ID
+        // Use try-catch to handle missing columns gracefully if migration hasn't been run
+        let lead;
+        try {
+            lead = await Lead.findOne({
+                where: {
+                    id: req.params.id,
+                    providerId: req.user.id // User ID, not ProviderProfile ID
+                }
+            });
+        } catch (dbError) {
+            // If error is about missing columns, try with explicit attributes (migration not run yet)
+            if (dbError.message && dbError.message.includes('Unknown column')) {
+                console.log('Migration not run yet, using explicit attributes for lead reject...');
+                lead = await Lead.findOne({
+                    where: {
+                        id: req.params.id,
+                        providerId: req.user.id
+                    },
+                    attributes: [
+                        'id', 'customerId', 'businessId', 'providerId', 'serviceType', 'categoryId',
+                        'locationCity', 'locationState', 'locationPostalCode', 'description', 'budgetRange',
+                        'preferredContact', 'customerName', 'customerEmail', 'customerPhone', 'membershipTierRequired',
+                        'status', 'stripePaymentIntentId', 'leadCost', 'statusHistory', 'metadata', 'routedAt',
+                        'createdAt', 'updatedAt'
+                    ]
+                });
+            } else {
+                throw dbError;
             }
-        });
+        }
 
         if (!lead) {
             return res.status(404).json({
@@ -716,7 +885,24 @@ router.patch('/leads/:id/reject', protect, async (req, res) => {
         }
 
         // Get rejection reason from request body
-        const { reason } = req.body;
+        const { rejectionReason, rejectionReasonOther } = req.body;
+
+        // Validate rejection reason
+        const validReasons = ['TOO_FAR', 'TOO_EXPENSIVE', 'NOT_RELEVANT', 'OTHER'];
+        if (rejectionReason && !validReasons.includes(rejectionReason)) {
+            return res.status(400).json({
+                success: false,
+                error: 'Invalid rejection reason. Must be one of: TOO_FAR, TOO_EXPENSIVE, NOT_RELEVANT, OTHER'
+            });
+        }
+
+        // If reason is OTHER, rejectionReasonOther is required
+        if (rejectionReason === 'OTHER' && (!rejectionReasonOther || !rejectionReasonOther.trim())) {
+            return res.status(400).json({
+                success: false,
+                error: 'Please provide a description when selecting "Other" as the rejection reason'
+            });
+        }
 
         // Extract serviceRequestId from metadata
         let serviceRequestId = null;
@@ -733,19 +919,58 @@ router.patch('/leads/:id/reject', protect, async (req, res) => {
         }
 
         // Get service request if available
+        // Use try-catch to handle missing columns gracefully if migration hasn't been run
         if (serviceRequestId) {
-            serviceRequest = await ServiceRequest.findByPk(serviceRequestId, {
-                include: [
-                    { model: User, as: 'customer', attributes: ['id', 'name', 'email', 'firstName', 'lastName'] },
-                    { model: Category, as: 'category', attributes: ['id', 'name'] }
-                ]
-            });
+            try {
+                serviceRequest = await ServiceRequest.findByPk(serviceRequestId, {
+                    include: [
+                        { model: User, as: 'customer', attributes: ['id', 'name', 'email', 'firstName', 'lastName'] },
+                        { model: Category, as: 'category', attributes: ['id', 'name'] }
+                    ]
+                });
+            } catch (dbError) {
+                // If error is about missing columns, try with explicit attributes (migration not run yet)
+                if (dbError.message && dbError.message.includes('Unknown column')) {
+                    console.log('Migration not run yet, using explicit attributes for service request in lead reject...');
+                    serviceRequest = await ServiceRequest.findByPk(serviceRequestId, {
+                        attributes: [
+                            'id', 'customerId', 'categoryId', 'subCategoryId', 'zipCode',
+                            'projectTitle', 'projectDescription', 'attachments', 'preferredDate',
+                            'preferredTime', 'status', 'primaryProviderId', 'selectedBusinessIds',
+                            'createdAt', 'updatedAt'
+                        ],
+                        include: [
+                            { model: User, as: 'customer', attributes: ['id', 'name', 'email', 'firstName', 'lastName'] },
+                            { model: Category, as: 'category', attributes: ['id', 'name'] }
+                        ]
+                    });
+                } else {
+                    throw dbError;
+                }
+            }
         }
 
-        // Update lead status to rejected
-        await lead.update({
-            status: 'rejected'
-        });
+        // Update lead status to rejected with rejection reason
+        // Use try-catch to handle missing columns gracefully if migration hasn't been run
+        try {
+            await lead.update({
+                status: 'rejected',
+                rejectionReason: rejectionReason || null,
+                rejectionReasonOther: rejectionReason === 'OTHER' ? rejectionReasonOther : null
+            });
+        } catch (updateError) {
+            // If error is about missing columns, only update status (migration not run yet)
+            if (updateError.message && updateError.message.includes('Unknown column')) {
+                console.log('Migration not run yet, updating only status field...');
+                await lead.update({
+                    status: 'rejected'
+                });
+                // Log a warning that rejection reasons weren't saved
+                console.warn('⚠️ Rejection reasons provided but not saved - migration not run yet');
+            } else {
+                throw updateError;
+            }
+        }
 
         // Get customer info for email
         const customer = serviceRequest?.customer || await User.findByPk(lead.customerId, {
@@ -781,10 +1006,18 @@ router.patch('/leads/:id/reject', protect, async (req, res) => {
                                     <p style="margin: 5px 0;"><strong>Category:</strong> ${serviceRequest?.category?.name || lead.categoryId || 'N/A'}</p>
                                 </div>
 
-                                ${reason ? `
+                                ${rejectionReason ? `
                                 <div style="background-color: #fff3cd; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #ffc107;">
-                                    <h3 style="margin-top: 0; color: #856404;">Provider's Note</h3>
-                                    <p style="margin: 5px 0; color: #856404; white-space: pre-wrap;">${reason}</p>
+                                    <h3 style="margin-top: 0; color: #856404;">Rejection Reason</h3>
+                                    <p style="margin: 5px 0; color: #856404;">
+                                        <strong>Reason:</strong> ${rejectionReason === 'TOO_FAR' ? 'Too Far' :
+                                rejectionReason === 'TOO_EXPENSIVE' ? 'Too Expensive' :
+                                    rejectionReason === 'NOT_RELEVANT' ? 'Not Relevant Service Request' :
+                                        'Other'}
+                                    </p>
+                                    ${rejectionReason === 'OTHER' && rejectionReasonOther ? `
+                                    <p style="margin: 5px 0; color: #856404; white-space: pre-wrap;"><strong>Details:</strong> ${rejectionReasonOther}</p>
+                                    ` : ''}
                                 </div>
                                 ` : ''}
 
@@ -823,7 +1056,8 @@ router.patch('/leads/:id/reject', protect, async (req, res) => {
             metadata: {
                 leadId: lead.id,
                 serviceRequestId: serviceRequestId,
-                reason: reason || null
+                rejectionReason: rejectionReason || null,
+                rejectionReasonOther: rejectionReason === 'OTHER' ? rejectionReasonOther : null
             }
         });
 

@@ -54,6 +54,57 @@ const Businesses = () => {
     loadFilterOptions();
   }, []);
 
+  // Load subcategories when categories are selected
+  useEffect(() => {
+    const loadSubcategoriesForSelectedCategories = async () => {
+      if (selectedCategories.length > 0) {
+        try {
+          // Load subcategories for all selected categories
+          const subcategoryPromises = selectedCategories.map(categoryId =>
+            api.get(`/subcategories?categoryId=${categoryId}`).catch(() => ({ data: { subcategories: [] } }))
+          );
+          const responses = await Promise.all(subcategoryPromises);
+
+          // Combine all subcategories and deduplicate by id
+          const allSubcategories = [];
+          const seenIds = new Set();
+
+          responses.forEach(response => {
+            const subs = response.data?.subcategories || [];
+            subs.forEach(sub => {
+              if (!seenIds.has(sub.id)) {
+                seenIds.add(sub.id);
+                allSubcategories.push(sub);
+              }
+            });
+          });
+
+          console.log('Loaded subcategories for selected categories:', {
+            selectedCategories: selectedCategories,
+            subcategoriesCount: allSubcategories.length,
+            subcategories: allSubcategories.map(s => ({
+              id: s.id,
+              name: s.name,
+              categoryId: s.categoryId || s.category?.id,
+              hasCategoryId: !!s.categoryId,
+              hasNestedCategory: !!s.category
+            }))
+          });
+
+          setSubcategories(allSubcategories);
+        } catch (error) {
+          console.error('Error loading subcategories for selected categories:', error);
+        }
+      } else {
+        // If no categories selected, reload all subcategories from initial load
+        // Don't call loadFilterOptions again to avoid infinite loop
+      }
+    };
+
+    loadSubcategoriesForSelectedCategories();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedCategories]);
+
   useEffect(() => {
     loadBusinesses();
   }, [page, selectedStates, selectedCities, selectedZip, selectedCategories, selectedSubcategories, selectedRatings, sortBy, featuredOnly, searchName, searchLocation]);
@@ -121,7 +172,21 @@ const Businesses = () => {
       });
       // Use categories from filter-options (already filtered to only show categories with businesses)
       setCategories(filterResponse.data.categories || []);
-      setSubcategories(subcategoriesResponse.data.subcategories || []);
+      const loadedSubcategories = subcategoriesResponse.data.subcategories || [];
+
+      // Debug: Log subcategories structure
+      console.log('Loaded subcategories:', loadedSubcategories.length);
+      loadedSubcategories.forEach(sub => {
+        console.log('Subcategory:', {
+          id: sub.id,
+          name: sub.name,
+          categoryId: sub.categoryId,
+          category: sub.category,
+          categoryIdFromNested: sub.category?.id
+        });
+      });
+
+      setSubcategories(loadedSubcategories);
     } catch (error) {
       console.error('Error loading filter options:', error);
     }
@@ -224,8 +289,13 @@ const Businesses = () => {
         // Remove category and its subcategories
         const newCategories = prev.filter(c => c !== categoryId);
         setSelectedSubcategories(prevSubs => {
+          const categoryIdNum = parseInt(categoryId);
           const subsInCategory = subcategories
-            .filter(sub => sub.categoryId === parseInt(categoryId))
+            .filter(sub => {
+              // Handle both direct categoryId and nested category.id
+              const subCategoryId = sub.categoryId || sub.category?.id;
+              return subCategoryId === categoryIdNum;
+            })
             .map(sub => sub.id.toString());
           return prevSubs.filter(subId => !subsInCategory.includes(subId));
         });
@@ -285,8 +355,44 @@ const Businesses = () => {
 
   // Get subcategories from all selected categories
   const filteredSubcategories = selectedCategories.length > 0
-    ? subcategories.filter(sub => selectedCategories.includes(sub.categoryId.toString()))
+    ? subcategories.filter(sub => {
+      // Handle both direct categoryId and nested category.id
+      const subCategoryId = sub.categoryId || sub.category?.id;
+      if (!subCategoryId) {
+        console.warn('Subcategory missing categoryId:', sub);
+        return false;
+      }
+      // Convert both to strings for comparison
+      const subCategoryIdStr = String(subCategoryId);
+      const isMatch = selectedCategories.some(selectedCatId => {
+        const selectedCatIdStr = String(selectedCatId);
+        return subCategoryIdStr === selectedCatIdStr;
+      });
+
+      // Debug logging
+      if (isMatch) {
+        console.log('Subcategory matched:', {
+          subId: sub.id,
+          subName: sub.name,
+          subCategoryId: subCategoryId,
+          subCategoryIdStr: subCategoryIdStr,
+          selectedCategories: selectedCategories
+        });
+      }
+
+      return isMatch;
+    })
     : subcategories;
+
+  // Debug: Log filtered results
+  if (selectedCategories.length > 0) {
+    console.log('Filtered subcategories:', {
+      selectedCategories: selectedCategories,
+      totalSubcategories: subcategories.length,
+      filteredCount: filteredSubcategories.length,
+      filtered: filteredSubcategories.map(s => ({ id: s.id, name: s.name, categoryId: s.categoryId || s.category?.id }))
+    });
+  }
 
   const hasActiveFilters = selectedStates.length > 0 || selectedCities.length > 0 || selectedZip ||
     selectedCategories.length > 0 || selectedSubcategories.length > 0 || selectedRatings.length > 0 || featuredOnly;

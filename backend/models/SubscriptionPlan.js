@@ -74,6 +74,12 @@ const SubscriptionPlan = sequelize.define('SubscriptionPlan', {
     hasAdvancedAnalytics: {
         type: DataTypes.BOOLEAN,
         defaultValue: false
+    },
+    maxLeadsPerMonth: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        defaultValue: null,
+        comment: 'Maximum number of leads/service requests per month. null = unlimited'
     }
 }, {
     tableName: 'subscription_plans',

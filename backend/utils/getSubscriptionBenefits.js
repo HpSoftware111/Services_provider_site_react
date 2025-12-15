@@ -24,13 +24,14 @@ async function getSubscriptionBenefits(userId) {
                         'leadDiscountPercent',
                         'priorityBoostPoints',
                         'isFeatured',
-                        'hasAdvancedAnalytics'
+                        'hasAdvancedAnalytics',
+                        'maxLeadsPerMonth'
                     ]
                 }
             ]
         });
 
-        // If no active subscription, return default values
+        // If no active subscription, return default values (BASIC plan limits)
         if (!subscription || !subscription.plan) {
             return {
                 hasActiveSubscription: false,
@@ -38,7 +39,8 @@ async function getSubscriptionBenefits(userId) {
                 leadDiscountPercent: 0,
                 priorityBoostPoints: 0,
                 isFeatured: false,
-                hasAdvancedAnalytics: false
+                hasAdvancedAnalytics: false,
+                maxLeadsPerMonth: 10 // Default BASIC plan limit
             };
         }
 
@@ -52,7 +54,8 @@ async function getSubscriptionBenefits(userId) {
                 leadDiscountPercent: 0,
                 priorityBoostPoints: 0,
                 isFeatured: false,
-                hasAdvancedAnalytics: false
+                hasAdvancedAnalytics: false,
+                maxLeadsPerMonth: 10 // Default BASIC plan limit
             };
         }
 
@@ -65,6 +68,9 @@ async function getSubscriptionBenefits(userId) {
             priorityBoostPoints: parseInt(plan.priorityBoostPoints || 0),
             isFeatured: plan.isFeatured || false,
             hasAdvancedAnalytics: plan.hasAdvancedAnalytics || false,
+            maxLeadsPerMonth: plan.maxLeadsPerMonth !== null && plan.maxLeadsPerMonth !== undefined
+                ? parseInt(plan.maxLeadsPerMonth)
+                : null, // null means unlimited
             subscriptionId: subscription.id,
             planId: plan.id,
             planName: plan.name
@@ -78,7 +84,8 @@ async function getSubscriptionBenefits(userId) {
             leadDiscountPercent: 0,
             priorityBoostPoints: 0,
             isFeatured: false,
-            hasAdvancedAnalytics: false
+            hasAdvancedAnalytics: false,
+            maxLeadsPerMonth: 10 // Default BASIC plan limit
         };
     }
 }

@@ -60,6 +60,14 @@ const Proposal = sequelize.define('Proposal', {
     stripeTransferId: {
         type: DataTypes.STRING(255),
         allowNull: true
+    },
+    rejectionReason: {
+        type: DataTypes.ENUM('TOO_FAR', 'TOO_EXPENSIVE', 'NOT_RELEVANT', 'OTHER'),
+        allowNull: true
+    },
+    rejectionReasonOther: {
+        type: DataTypes.TEXT,
+        allowNull: true
     }
 }, {
     tableName: 'proposals',

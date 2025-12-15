@@ -17,6 +17,7 @@ const NotificationAudit = require('./NotificationAudit');
 const NotificationPreference = require('./NotificationPreference');
 const SubscriptionPlan = require('./SubscriptionPlan');
 const UserSubscription = require('./UserSubscription');
+const PhoneVerification = require('./PhoneVerification');
 
 // Define associations
 User.hasMany(Business, { foreignKey: 'ownerId', as: 'businesses' });
@@ -91,6 +92,10 @@ UserSubscription.belongsTo(User, { foreignKey: 'userId', as: 'user' });
 UserSubscription.belongsTo(SubscriptionPlan, { foreignKey: 'subscriptionPlanId', as: 'plan' });
 SubscriptionPlan.hasMany(UserSubscription, { foreignKey: 'subscriptionPlanId', as: 'subscriptions' });
 
+// Phone Verification associations
+User.hasMany(PhoneVerification, { foreignKey: 'userId', as: 'phoneVerifications' });
+PhoneVerification.belongsTo(User, { foreignKey: 'userId', as: 'user' });
+
 module.exports = {
   sequelize,
   User,
@@ -110,5 +115,6 @@ module.exports = {
   NotificationAudit,
   NotificationPreference,
   SubscriptionPlan,
-  UserSubscription
+  UserSubscription,
+  PhoneVerification
 };

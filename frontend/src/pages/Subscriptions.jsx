@@ -222,6 +222,18 @@ const Subscriptions = () => {
                         <span>{plan.leadDiscountPercent}% discount on lead costs</span>
                       </li>
                     )}
+                    {plan.maxLeadsPerMonth !== null && plan.maxLeadsPerMonth !== undefined && (
+                      <li>
+                        <i className="fas fa-chart-line"></i>
+                        <span><strong>{plan.maxLeadsPerMonth} leads per month</strong></span>
+                      </li>
+                    )}
+                    {plan.maxLeadsPerMonth === null && (
+                      <li>
+                        <i className="fas fa-infinity"></i>
+                        <span><strong>Unlimited leads per month</strong></span>
+                      </li>
+                    )}
                     {plan.priorityBoostPoints > 0 && (
                       <li>
                         <i className="fas fa-check"></i>

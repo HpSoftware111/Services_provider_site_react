@@ -27,6 +27,13 @@ const MyRequests = () => {
     const [showReviewForm, setShowReviewForm] = useState(false);
     const [reviewStatus, setReviewStatus] = useState(null);
     const [refreshInterval, setRefreshInterval] = useState(null);
+    const [showRejectProposalModal, setShowRejectProposalModal] = useState(false);
+    const [selectedProposalForReject, setSelectedProposalForReject] = useState(null);
+    const [proposalRejectionReason, setProposalRejectionReason] = useState('');
+    const [proposalRejectionReasonOther, setProposalRejectionReasonOther] = useState('');
+    const [showCancelRequestModal, setShowCancelRequestModal] = useState(false);
+    const [cancelRejectionReason, setCancelRejectionReason] = useState('');
+    const [cancelRejectionReasonOther, setCancelRejectionReasonOther] = useState('');
 
     useEffect(() => {
         loadRequests();
@@ -288,14 +295,40 @@ const MyRequests = () => {
         setShowPaymentModal(true);
     };
 
-    const handleRejectProposal = async (proposal) => {
-        if (!window.confirm('Are you sure you want to reject this proposal?')) {
+    const handleRejectProposal = (proposal) => {
+        setSelectedProposalForReject(proposal);
+        setProposalRejectionReason('');
+        setProposalRejectionReasonOther('');
+        setShowRejectProposalModal(true);
+    };
+
+    const handleConfirmRejectProposal = async () => {
+        if (!selectedProposalForReject) return;
+
+        // Validate rejection reason
+        if (!proposalRejectionReason) {
+            setMessage({
+                type: 'error',
+                text: 'Please select a rejection reason'
+            });
+            return;
+        }
+
+        if (proposalRejectionReason === 'OTHER' && !proposalRejectionReasonOther.trim()) {
+            setMessage({
+                type: 'error',
+                text: 'Please provide a description when selecting "Other" as the rejection reason'
+            });
             return;
         }
 
         try {
             const response = await api.patch(
-                `/service-requests/my/service-requests/${selectedRequest.id}/proposals/${proposal.id}/reject`
+                `/service-requests/my/service-requests/${selectedRequest.id}/proposals/${selectedProposalForReject.id}/reject`,
+                {
+                    rejectionReason: proposalRejectionReason,
+                    rejectionReasonOther: proposalRejectionReason === 'OTHER' ? proposalRejectionReasonOther : null
+                }
             );
 
             if (response.data.success) {
@@ -304,14 +337,21 @@ const MyRequests = () => {
                     text: 'Proposal rejected successfully'
                 });
 
+                // Close rejection modal
+                setShowRejectProposalModal(false);
+                setSelectedProposalForReject(null);
+                setProposalRejectionReason('');
+                setProposalRejectionReasonOther('');
+
                 // Force a fresh reload by clearing selectedRequest first
+                const requestId = selectedRequest.id;
                 setSelectedRequest(null);
 
                 // Small delay to ensure backend has processed the update
                 await new Promise(resolve => setTimeout(resolve, 300));
 
                 // Reload request details to show updated proposal status (keep modal open)
-                await handleViewDetails(selectedRequest.id);
+                await handleViewDetails(requestId);
 
                 // Also reload the main requests list to keep it in sync
                 loadRequests();
@@ -368,17 +408,35 @@ const MyRequests = () => {
         }
     };
 
-    const handleCancelRequest = async () => {
+    const handleCancelRequest = () => {
+        if (!selectedRequest) return;
+        setCancelRejectionReason('');
+        setCancelRejectionReasonOther('');
+        setShowCancelRequestModal(true);
+    };
+
+    const handleConfirmCancelRequest = async () => {
         if (!selectedRequest) return;
 
-        if (!window.confirm('Are you sure you want to cancel this service request? This action cannot be undone.')) {
-            return;
+        // Rejection reason is optional for cancellation, but if provided, validate it
+        if (cancelRejectionReason) {
+            if (cancelRejectionReason === 'OTHER' && !cancelRejectionReasonOther.trim()) {
+                setMessage({
+                    type: 'error',
+                    text: 'Please provide a description when selecting "Other" as the rejection reason'
+                });
+                return;
+            }
         }
 
         try {
             setMessage({ type: '', text: '' });
             const response = await api.patch(
-                `/service-requests/my/service-requests/${selectedRequest.id}/cancel`
+                `/service-requests/my/service-requests/${selectedRequest.id}/cancel`,
+                {
+                    rejectionReason: cancelRejectionReason || null,
+                    rejectionReasonOther: cancelRejectionReason === 'OTHER' ? cancelRejectionReasonOther : null
+                }
             );
 
             if (response.data.success) {
@@ -1236,6 +1294,184 @@ const MyRequests = () => {
                             )}
                             <button className="btn-secondary" onClick={closeModal}>
                                 Close
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Cancel Request Modal */}
+            {showCancelRequestModal && selectedRequest && (
+                <div className="modal-overlay" onClick={() => setShowCancelRequestModal(false)}>
+                    <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '500px' }}>
+                        <div className="modal-header">
+                            <h2>
+                                <i className="fas fa-times-circle"></i>
+                                Cancel Service Request
+                            </h2>
+                            <button
+                                className="modal-close"
+                                onClick={() => setShowCancelRequestModal(false)}
+                            >
+                                <i className="fas fa-times"></i>
+                            </button>
+                        </div>
+
+                        <div className="modal-body">
+                            <p style={{ marginBottom: '20px', color: '#666' }}>
+                                Are you sure you want to cancel this service request? This action cannot be undone.
+                            </p>
+
+                            <div className="form-group">
+                                <label htmlFor="cancel-rejection-reason">
+                                    Reason for Cancellation (Optional)
+                                </label>
+                                <select
+                                    id="cancel-rejection-reason"
+                                    value={cancelRejectionReason}
+                                    onChange={(e) => {
+                                        setCancelRejectionReason(e.target.value);
+                                        if (e.target.value !== 'OTHER') {
+                                            setCancelRejectionReasonOther('');
+                                        }
+                                    }}
+                                    style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid #ddd', fontSize: '14px' }}
+                                >
+                                    <option value="">-- Select a reason (optional) --</option>
+                                    <option value="TOO_FAR">Too Far</option>
+                                    <option value="TOO_EXPENSIVE">Too Expensive</option>
+                                    <option value="NOT_RELEVANT">Not Relevant Service Request</option>
+                                    <option value="OTHER">Other (Describe)</option>
+                                </select>
+                            </div>
+
+                            {cancelRejectionReason === 'OTHER' && (
+                                <div className="form-group">
+                                    <label htmlFor="cancel-rejection-reason-other">
+                                        Please describe the reason <span style={{ color: '#dc3545' }}>*</span>
+                                    </label>
+                                    <textarea
+                                        id="cancel-rejection-reason-other"
+                                        value={cancelRejectionReasonOther}
+                                        onChange={(e) => setCancelRejectionReasonOther(e.target.value)}
+                                        placeholder="Please provide details about why you are cancelling this request..."
+                                        rows={4}
+                                        required
+                                        style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid #ddd', fontSize: '14px' }}
+                                    />
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="modal-actions">
+                            <button
+                                type="button"
+                                className="cancel-btn"
+                                onClick={() => {
+                                    setShowCancelRequestModal(false);
+                                    setCancelRejectionReason('');
+                                    setCancelRejectionReasonOther('');
+                                }}
+                            >
+                                Keep Request
+                            </button>
+                            <button
+                                type="button"
+                                className="btn-danger"
+                                onClick={handleConfirmCancelRequest}
+                            >
+                                <i className="fas fa-times-circle"></i>
+                                Confirm Cancellation
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Reject Proposal Modal */}
+            {showRejectProposalModal && selectedProposalForReject && selectedRequest && (
+                <div className="modal-overlay" onClick={() => setShowRejectProposalModal(false)}>
+                    <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '500px' }}>
+                        <div className="modal-header">
+                            <h2>
+                                <i className="fas fa-times-circle"></i>
+                                Reject Proposal
+                            </h2>
+                            <button
+                                className="modal-close"
+                                onClick={() => setShowRejectProposalModal(false)}
+                            >
+                                <i className="fas fa-times"></i>
+                            </button>
+                        </div>
+
+                        <div className="modal-body">
+                            <p style={{ marginBottom: '20px', color: '#666' }}>
+                                Are you sure you want to reject this proposal? Please select a reason below.
+                            </p>
+
+                            <div className="form-group">
+                                <label htmlFor="proposal-rejection-reason">
+                                    Rejection Reason <span style={{ color: '#dc3545' }}>*</span>
+                                </label>
+                                <select
+                                    id="proposal-rejection-reason"
+                                    value={proposalRejectionReason}
+                                    onChange={(e) => {
+                                        setProposalRejectionReason(e.target.value);
+                                        if (e.target.value !== 'OTHER') {
+                                            setProposalRejectionReasonOther('');
+                                        }
+                                    }}
+                                    required
+                                    style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid #ddd', fontSize: '14px' }}
+                                >
+                                    <option value="">-- Select a reason --</option>
+                                    <option value="TOO_FAR">Too Far</option>
+                                    <option value="TOO_EXPENSIVE">Too Expensive</option>
+                                    <option value="NOT_RELEVANT">Not Relevant Service Request</option>
+                                    <option value="OTHER">Other (Describe)</option>
+                                </select>
+                            </div>
+
+                            {proposalRejectionReason === 'OTHER' && (
+                                <div className="form-group">
+                                    <label htmlFor="proposal-rejection-reason-other">
+                                        Please describe the reason <span style={{ color: '#dc3545' }}>*</span>
+                                    </label>
+                                    <textarea
+                                        id="proposal-rejection-reason-other"
+                                        value={proposalRejectionReasonOther}
+                                        onChange={(e) => setProposalRejectionReasonOther(e.target.value)}
+                                        placeholder="Please provide details about why you are rejecting this proposal..."
+                                        rows={4}
+                                        required
+                                        style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid #ddd', fontSize: '14px' }}
+                                    />
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="modal-actions">
+                            <button
+                                type="button"
+                                className="cancel-btn"
+                                onClick={() => {
+                                    setShowRejectProposalModal(false);
+                                    setSelectedProposalForReject(null);
+                                    setProposalRejectionReason('');
+                                    setProposalRejectionReasonOther('');
+                                }}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                className="btn-danger"
+                                onClick={handleConfirmRejectProposal}
+                            >
+                                <i className="fas fa-times-circle"></i>
+                                Confirm Rejection
                             </button>
                         </div>
                     </div>
