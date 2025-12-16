@@ -448,10 +448,35 @@ const Subscriptions = () => {
 
         {currentSubscription && (
           <div className="current-subscription">
+            {currentSubscription.status === 'EXPIRED' && (
+              <div className="alert alert-warning" style={{ 
+                marginBottom: '20px',
+                backgroundColor: '#fef3c7',
+                border: '2px solid #f59e0b',
+                padding: '16px 20px',
+                borderRadius: '8px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '12px'
+              }}>
+                <i className="fas fa-exclamation-triangle" style={{ fontSize: '24px', color: '#d97706' }}></i>
+                <div style={{ flex: 1 }}>
+                  <strong style={{ display: 'block', marginBottom: '4px', color: '#92400e' }}>
+                    Your subscription has expired
+                  </strong>
+                  <span style={{ color: '#78350f' }}>
+                    {currentSubscription.currentPeriodEnd 
+                      ? `Expired on ${new Date(currentSubscription.currentPeriodEnd).toLocaleDateString()}. `
+                      : ''}
+                    Please renew your subscription to continue accessing premium features.
+                  </span>
+                </div>
+              </div>
+            )}
             <h3>
-              <i className="fas fa-check-circle"></i> Current Subscription
+              <i className={`fas fa-${currentSubscription.status === 'EXPIRED' ? 'exclamation-triangle' : 'check-circle'}`}></i> Current Subscription
             </h3>
-            <div className="current-subscription-card">
+            <div className={`current-subscription-card ${currentSubscription.status === 'EXPIRED' ? 'expired' : ''}`}>
               <div className="subscription-info">
                 <h4>{currentSubscription.plan?.name || 'Active Plan'}</h4>
                 <p className="subscription-price">
@@ -462,7 +487,8 @@ const Subscriptions = () => {
                 </p>
                 {currentSubscription.currentPeriodEnd && (
                   <p className="subscription-period">
-                    Renews: {new Date(currentSubscription.currentPeriodEnd).toLocaleDateString()}
+                    {currentSubscription.status === 'EXPIRED' ? 'Expired: ' : 'Renews: '}
+                    {new Date(currentSubscription.currentPeriodEnd).toLocaleDateString()}
                   </p>
                 )}
                 {currentSubscription.status && (

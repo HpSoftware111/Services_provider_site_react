@@ -79,10 +79,13 @@ async function getSubscriptionBenefits(userId) {
         }
 
         // Check if subscription is still within current period
-        const now = new Date();
+        const now = new Date(); // Use server time (UTC)
         if (subscription.currentPeriodEnd && new Date(subscription.currentPeriodEnd) < now) {
-            // Subscription expired
-            console.log(`[getSubscriptionBenefits] Subscription expired for user ${userId}, period ended: ${subscription.currentPeriodEnd}`);
+            // Subscription expired - update status in database
+            if (subscription.status === 'ACTIVE') {
+                await subscription.update({ status: 'EXPIRED' });
+                console.log(`[getSubscriptionBenefits] Updated subscription ${subscription.id} to EXPIRED for user ${userId}, period ended: ${subscription.currentPeriodEnd}`);
+            }
             return {
                 hasActiveSubscription: false,
                 tier: 'BASIC',

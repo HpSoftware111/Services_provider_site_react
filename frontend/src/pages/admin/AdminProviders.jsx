@@ -153,6 +153,33 @@ const AdminProviders = () => {
                       <div style={{ fontSize: '12px' }}>
                         <div style={{ fontWeight: '600' }}>{provider.subscription.planName}</div>
                         <div style={{ color: '#6b7280', fontSize: '11px' }}>{provider.subscription.tier}</div>
+                        <div style={{ 
+                          marginTop: '4px',
+                          fontSize: '10px',
+                          padding: '2px 6px',
+                          borderRadius: '4px',
+                          display: 'inline-block',
+                          backgroundColor: provider.subscription.status === 'ACTIVE' ? '#d1fae5' : 
+                                         provider.subscription.status === 'EXPIRED' ? '#fee2e2' :
+                                         provider.subscription.status === 'CANCELLED' ? '#fef3c7' :
+                                         provider.subscription.status === 'TRIAL' ? '#dbeafe' : '#f3f4f6',
+                          color: provider.subscription.status === 'ACTIVE' ? '#065f46' : 
+                                provider.subscription.status === 'EXPIRED' ? '#991b1b' :
+                                provider.subscription.status === 'CANCELLED' ? '#92400e' :
+                                provider.subscription.status === 'TRIAL' ? '#1e40af' : '#374151',
+                          fontWeight: '600'
+                        }}>
+                          {provider.subscription.status || 'N/A'}
+                        </div>
+                        {provider.subscription.currentPeriodEnd && (
+                          <div style={{ 
+                            marginTop: '4px',
+                            fontSize: '10px',
+                            color: '#6b7280'
+                          }}>
+                            Expires: {new Date(provider.subscription.currentPeriodEnd).toLocaleDateString()}
+                          </div>
+                        )}
                       </div>
                     ) : (
                       <span style={{ color: '#9ca3af', fontSize: '12px' }}>No Subscription</span>

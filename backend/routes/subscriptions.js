@@ -140,6 +140,20 @@ router.get('/my-subscription', protect, async (req, res) => {
       }
     }
 
+    // Check if subscription has expired based on currentPeriodEnd (using UTC time)
+    if (subscription && subscription.status === 'ACTIVE' && subscription.currentPeriodEnd) {
+      const now = new Date();
+      const periodEnd = new Date(subscription.currentPeriodEnd);
+      
+      // Compare dates in UTC to avoid timezone issues
+      if (periodEnd < now) {
+        // Subscription has expired - update status
+        await subscription.update({ status: 'EXPIRED' });
+        subscription.status = 'EXPIRED';
+        console.log(`[my-subscription] Updated subscription ${subscription.id} to EXPIRED (period ended: ${periodEnd.toISOString()})`);
+      }
+    }
+
     res.json({
       success: true,
       subscription: subscription || null

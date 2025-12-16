@@ -15,11 +15,32 @@ const UserDashboardLayout = ({ children }) => {
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [message, setMessage] = useState({ type: '', text: '' });
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [subscriptionStatus, setSubscriptionStatus] = useState(null);
 
   useEffect(() => {
     if (user) {
       setEditName(user.name || '');
     }
+  }, [user]);
+
+  // Load subscription status for providers
+  useEffect(() => {
+    const loadSubscriptionStatus = async () => {
+      if (user && (user.role === 'business_owner' || user.role === 'provider')) {
+        try {
+          const response = await api.get('/subscriptions/my-subscription');
+          if (response.data.subscription) {
+            setSubscriptionStatus(response.data.subscription);
+          } else {
+            setSubscriptionStatus(null);
+          }
+        } catch (error) {
+          console.error('Error loading subscription status:', error);
+          setSubscriptionStatus(null);
+        }
+      }
+    };
+    loadSubscriptionStatus();
   }, [user]);
 
   const handleLogout = () => {
@@ -310,6 +331,57 @@ const UserDashboardLayout = ({ children }) => {
 
       {/* Main Content Area */}
       <div className="modern-dashboard-main">
+        {/* Subscription Expired Warning Banner */}
+        {subscriptionStatus && subscriptionStatus.status === 'EXPIRED' && location.pathname !== '/user-dashboard/subscriptions' && (
+          <div style={{
+            backgroundColor: '#fef3c7',
+            border: '2px solid #f59e0b',
+            borderLeft: '4px solid #d97706',
+            padding: '16px 20px',
+            margin: '20px',
+            borderRadius: '8px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '16px',
+            boxShadow: '0 2px 8px rgba(217, 119, 6, 0.15)'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1 }}>
+              <i className="fas fa-exclamation-triangle" style={{ fontSize: '24px', color: '#d97706' }}></i>
+              <div>
+                <strong style={{ display: 'block', marginBottom: '4px', color: '#92400e', fontSize: '16px' }}>
+                  Your subscription has expired
+                </strong>
+                <span style={{ color: '#78350f', fontSize: '14px' }}>
+                  {subscriptionStatus.currentPeriodEnd 
+                    ? `Expired on ${new Date(subscriptionStatus.currentPeriodEnd).toLocaleDateString()}. `
+                    : ''}
+                  Renew your subscription to continue accessing premium features.
+                </span>
+              </div>
+            </div>
+            <button
+              onClick={() => navigate('/user-dashboard/subscriptions')}
+              style={{
+                backgroundColor: '#d97706',
+                color: 'white',
+                border: 'none',
+                padding: '10px 20px',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                fontWeight: '600',
+                fontSize: '14px',
+                whiteSpace: 'nowrap',
+                transition: 'background-color 0.2s'
+              }}
+              onMouseOver={(e) => e.target.style.backgroundColor = '#b45309'}
+              onMouseOut={(e) => e.target.style.backgroundColor = '#d97706'}
+            >
+              <i className="fas fa-crown" style={{ marginRight: '6px' }}></i>
+              Renew Now
+            </button>
+          </div>
+        )}
         <div className="modern-content-area">
           {children}
         </div>

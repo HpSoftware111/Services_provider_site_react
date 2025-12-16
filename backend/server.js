@@ -25,6 +25,7 @@ const providerRoutes = require('./routes/provider');
 const subscriptionRoutes = require('./routes/subscriptions');
 const phoneVerificationRoutes = require('./routes/phone-verification');
 const scheduledTasksRoutes = require('./routes/scheduled-tasks');
+const seoRoutes = require('./routes/seo');
 
 // Initialize Express app
 const app = express();
@@ -127,6 +128,7 @@ app.use('/api/provider', providerRoutes);
 app.use('/api/subscriptions', subscriptionRoutes);
 app.use('/api/phone-verification', phoneVerificationRoutes);
 app.use('/api/scheduled-tasks', scheduledTasksRoutes);
+app.use('/api/seo', seoRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {

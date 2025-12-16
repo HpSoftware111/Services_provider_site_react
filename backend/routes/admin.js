@@ -1851,16 +1851,29 @@ router.get('/providers', async (req, res) => {
     });
 
     // Get simple provider info with verification status from businesses
-    const providersWithStats = users.map((user) => {
+    const now = new Date(); // Use server time (UTC)
+    
+    const providersWithStats = await Promise.all(users.map(async (user) => {
       // Get verification status from businesses (if any business is verified, provider is verified)
       const isVerified = user.businesses && user.businesses.length > 0
         ? user.businesses.some(business => business.isVerified === true)
         : false;
 
-      // Get active subscription
-      const activeSubscription = (user.subscription && user.subscription.status === 'ACTIVE')
-        ? user.subscription
-        : null;
+      // Get subscription (include all statuses, not just ACTIVE)
+      let subscription = user.subscription || null;
+
+      // Check if subscription has expired based on currentPeriodEnd (using UTC time)
+      if (subscription && subscription.status === 'ACTIVE' && subscription.currentPeriodEnd) {
+        const periodEnd = new Date(subscription.currentPeriodEnd);
+        
+        // Compare dates in UTC to avoid timezone issues
+        if (periodEnd < now) {
+          // Subscription has expired - update status
+          await subscription.update({ status: 'EXPIRED' });
+          subscription.status = 'EXPIRED';
+          console.log(`[admin/providers] Updated subscription ${subscription.id} for user ${user.id} to EXPIRED (period ended: ${periodEnd.toISOString()})`);
+        }
+      }
 
       return {
         id: user.id,
@@ -1872,12 +1885,15 @@ router.get('/providers', async (req, res) => {
         isVerified: isVerified,
         createdAt: user.createdAt,
         businessName: user.businesses && user.businesses.length > 0 ? user.businesses[0].name : null,
-        subscription: activeSubscription ? {
-          planName: activeSubscription.plan?.name || 'N/A',
-          tier: activeSubscription.plan?.tier || 'BASIC'
+        subscription: subscription ? {
+          planName: subscription.plan?.name || 'N/A',
+          tier: subscription.plan?.tier || 'BASIC',
+          status: subscription.status || null,
+          currentPeriodEnd: subscription.currentPeriodEnd || null,
+          currentPeriodStart: subscription.currentPeriodStart || null
         } : null
       };
-    });
+    }));
 
     res.json({
       success: true,

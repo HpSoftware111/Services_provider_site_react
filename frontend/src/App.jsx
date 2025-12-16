@@ -52,11 +52,14 @@ import ProviderLeads from './pages/ProviderLeads';
 import ProviderWorkOrders from './pages/ProviderWorkOrders';
 import ProviderPayouts from './pages/ProviderPayouts';
 import Subscriptions from './pages/Subscriptions';
+import SEOLandingPage from './pages/SEOLandingPage';
+import GoogleAnalytics from './components/GoogleAnalytics';
 import './App.css';
 
 function App() {
   return (
     <AuthProvider>
+      <GoogleAnalytics />
       <Routes>
         {/* Admin Login - Public route (separate from main site) */}
         <Route path="/admin/login" element={<AdminLogin />} />
@@ -142,6 +145,9 @@ function App() {
                 <Route path="/support" element={<Support />} />
                 <Route path="/verify-email" element={<VerifyEmail />} />
                 <Route path="/service-request" element={<ServiceRequest />} />
+                {/* SEO Landing Pages */}
+                <Route path="/seo/:serviceSlug/city/:locationSlug" element={<SEOLandingPage />} />
+                <Route path="/seo/:serviceSlug/zipcode/:locationSlug" element={<SEOLandingPage />} />
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>
             </main>
