@@ -596,6 +596,111 @@
   margin-bottom: 40px;
 }
 
+/* Carousel Styles */
+.carousel-container {
+  position: relative;
+  width: 100%;
+  margin: 40px 0;
+}
+
+.carousel-wrapper {
+  overflow: hidden;
+  position: relative;
+  width: 100%;
+  padding: 0 50px;
+}
+
+.carousel-track {
+  display: flex;
+  gap: 25px;
+  width: 100%;
+}
+
+.carousel-card {
+  flex: 0 0 calc((100% - 50px) / 3);
+  width: calc((100% - 50px) / 3);
+  background: white;
+  border-radius: 16px;
+  padding: 28px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+  border: 1px solid #e5e7eb;
+  position: relative;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.carousel-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+  transform: scaleX(0);
+  transition: transform 0.3s ease;
+}
+
+.carousel-card:hover::before {
+  transform: scaleX(1);
+}
+
+.carousel-card:hover {
+  transform: translateY(-6px);
+  box-shadow: 0 8px 24px rgba(102, 126, 234, 0.15);
+  border-color: #667eea;
+}
+
+.carousel-btn {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: white;
+  border: 2px solid #e5e7eb;
+  color: #667eea;
+  font-size: 18px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s ease;
+  z-index: 10;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.carousel-btn:hover:not(:disabled) {
+  background: #667eea;
+  color: white;
+  border-color: #667eea;
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+  transform: translateY(-50%) scale(1.1);
+}
+
+.carousel-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.carousel-btn-prev {
+  left: 0;
+}
+
+.carousel-btn-next {
+  right: 0;
+}
+
+.no-businesses {
+  text-align: center;
+  padding: 60px 20px;
+  color: #6b7280;
+  font-size: 16px;
+}
+
 .listing-card {
   background: white;
   border-radius: 16px;
@@ -879,6 +984,35 @@
   .listings-grid {
     grid-template-columns: 1fr;
     gap: 20px;
+  }
+}
+
+/* Carousel Responsive Styles */
+@media (max-width: 1024px) {
+  .carousel-card {
+    flex: 0 0 calc((100% - 25px) / 2);
+    width: calc((100% - 25px) / 2);
+  }
+  
+  .carousel-wrapper {
+    padding: 0 45px;
+  }
+}
+
+@media (max-width: 768px) {
+  .carousel-card {
+    flex: 0 0 100%;
+    width: 100%;
+  }
+  
+  .carousel-wrapper {
+    padding: 0 40px;
+  }
+  
+  .carousel-btn {
+    width: 40px;
+    height: 40px;
+    font-size: 16px;
   }
 }
 

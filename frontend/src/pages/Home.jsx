@@ -17,6 +17,7 @@ const Home = () => {
   const [showLocationSuggestions, setShowLocationSuggestions] = useState(false);
   const businessInputRef = useRef(null);
   const locationInputRef = useRef(null);
+  const carouselRef = useRef(null);
 
   useEffect(() => {
     loadData();
@@ -296,43 +297,85 @@ const Home = () => {
           </div>
           {loading ? (
             <div className="loading"><div className="spinner"></div></div>
-          ) : (
-            <>
-              <div className="listings-grid">
-                {businesses.map((business) => (
-                  <div key={business.id} className="listing-card" onClick={() => navigate(`/businesses/${business.id}`)}>
-                    {business.owner && (
-                      <div
-                        className="listing-owner-avatar"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          navigate(`/profile/${business.owner.id}`);
-                        }}
-                        title={`View ${business.owner.name}'s profile`}
-                      >
-                        {business.owner.avatar ? (
-                          <img src={business.owner.avatar} alt={business.owner.name} />
-                        ) : (
-                          <i className="fas fa-user-circle"></i>
-                        )}
+          ) : businesses.length > 0 ? (
+            <div className="carousel-container">
+              <button 
+                className="carousel-btn carousel-btn-prev"
+                onClick={() => {
+                  const cardWidth = carouselRef.current?.querySelector('.carousel-card')?.offsetWidth || 325;
+                  const gap = 25;
+                  const scrollAmount = cardWidth + gap;
+                  if (carouselRef.current) {
+                    carouselRef.current.scrollBy({
+                      left: -scrollAmount,
+                      behavior: 'smooth'
+                    });
+                  }
+                }}
+                aria-label="Previous businesses"
+              >
+                <i className="fas fa-chevron-left"></i>
+              </button>
+              
+              <div className="carousel-wrapper" ref={carouselRef}>
+                <div className="carousel-track">
+                  {businesses.map((business) => (
+                    <div key={business.id} className="carousel-card" onClick={() => navigate(`/businesses/${business.id}`)}>
+                      {business.owner && (
+                        <div
+                          className="listing-owner-avatar"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            navigate(`/profile/${business.owner.id}`);
+                          }}
+                          title={`View ${business.owner.name}'s profile`}
+                        >
+                          {business.owner.avatar ? (
+                            <img src={business.owner.avatar} alt={business.owner.name} />
+                          ) : (
+                            <i className="fas fa-user-circle"></i>
+                          )}
+                        </div>
+                      )}
+                      <div className="listing-header">
+                        <h3>{business.name}</h3>
+                        <div className="rating">
+                          <span className="stars">{'★'.repeat(Math.floor(parseFloat(business.ratingAverage) || 0))}</span>
+                          <span className="rating-value">{parseFloat(business.ratingAverage) || 0}</span>
+                        </div>
                       </div>
-                    )}
-                    <div className="listing-header">
-                      <h3>{business.name}</h3>
-                      <div className="rating">
-                        <span className="stars">{'★'.repeat(Math.floor(parseFloat(business.ratingAverage) || 0))}</span>
-                        <span className="rating-value">{parseFloat(business.ratingAverage) || 0}</span>
+                      <p className="listing-description">{business.description?.substring(0, 100)}...</p>
+                      <div className="listing-info">
+                        <p><i className="fas fa-map-marker-alt"></i> {business.city}, {business.state}</p>
+                        {business.category && <p><i className="fas fa-tag"></i> {business.category.name}</p>}
                       </div>
                     </div>
-                    <p className="listing-description">{business.description?.substring(0, 100)}...</p>
-                    <div className="listing-info">
-                      <p><i className="fas fa-map-marker-alt"></i> {business.city}, {business.state}</p>
-                      {business.category && <p><i className="fas fa-tag"></i> {business.category.name}</p>}
-                    </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
-            </>
+
+              <button 
+                className="carousel-btn carousel-btn-next"
+                onClick={() => {
+                  const cardWidth = carouselRef.current?.querySelector('.carousel-card')?.offsetWidth || 325;
+                  const gap = 25;
+                  const scrollAmount = cardWidth + gap;
+                  if (carouselRef.current) {
+                    carouselRef.current.scrollBy({
+                      left: scrollAmount,
+                      behavior: 'smooth'
+                    });
+                  }
+                }}
+                aria-label="Next businesses"
+              >
+                <i className="fas fa-chevron-right"></i>
+              </button>
+            </div>
+          ) : (
+            <div className="no-businesses">
+              <p>No businesses available at the moment.</p>
+            </div>
           )}
         </div>
       </section>
