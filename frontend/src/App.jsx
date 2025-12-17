@@ -19,6 +19,7 @@ import SearchResults from './pages/SearchResults';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import AddBusiness from './pages/AddBusiness';
+import ProviderSignup from './pages/ProviderSignup';
 import WriteReview from './pages/WriteReview';
 import Support from './pages/Support';
 import VerifyEmail from './pages/VerifyEmail';
@@ -141,6 +142,7 @@ function App() {
                 <Route path="/login" element={<Login />} />
                 <Route path="/register" element={<Register />} />
                 <Route path="/add-business" element={<AddBusiness />} />
+                <Route path="/provider-signup" element={<ProviderSignup />} />
                 <Route path="/write-review" element={<WriteReview />} />
                 <Route path="/support" element={<Support />} />
                 <Route path="/verify-email" element={<VerifyEmail />} />

@@ -6,7 +6,7 @@ import './Auth.css';
 
 const AddBusiness = () => {
   const navigate = useNavigate();
-  const { user } = useContext(AuthContext);
+  const { user, providerSignup, checkAuth } = useContext(AuthContext);
   const [categories, setCategories] = useState([]);
   const [subcategories, setSubcategories] = useState([]);
   const [formData, setFormData] = useState({
@@ -16,6 +16,18 @@ const AddBusiness = () => {
     images: [],
     videos: []
   });
+  // Simplified form data for logged-out users
+  const [simpleFormData, setSimpleFormData] = useState({
+    businessName: '',
+    categoryId: '',
+    email: '',
+    password: '',
+    phone: '',
+    address: '',
+    city: '',
+    state: '',
+    zipCode: ''
+  });
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
@@ -23,6 +35,7 @@ const AddBusiness = () => {
   const [createdBusinessId, setCreatedBusinessId] = useState(null);
   const [imagePreviews, setImagePreviews] = useState([]);
   const [videoUrls, setVideoUrls] = useState(['']);
+  const [showPassword, setShowPassword] = useState(false);
   const errorRef = useRef(null);
   const successRef = useRef(null);
 
@@ -147,6 +160,54 @@ const AddBusiness = () => {
     }));
   };
 
+  const [registrationComplete, setRegistrationComplete] = useState(false);
+
+  const handleSimpleSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    setSuccess('');
+
+    // Validation
+    if (simpleFormData.password.length < 6) {
+      setError('Password must be at least 6 characters');
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      const response = await providerSignup({
+        businessName: simpleFormData.businessName,
+        categoryId: parseInt(simpleFormData.categoryId),
+        email: simpleFormData.email,
+        password: simpleFormData.password,
+        phone: simpleFormData.phone,
+        address: simpleFormData.address,
+        city: simpleFormData.city || '',
+        state: simpleFormData.state || '',
+        zipCode: simpleFormData.zipCode || null
+      });
+
+      if (response.needsVerification) {
+        setRegistrationComplete(true);
+        setSuccess('Account and business created successfully! Please check your email to verify your account.');
+      } else if (response.token) {
+        // Only auto-login if token is provided (email verified or bypassed)
+        setSuccess('Account and business created successfully! You are now logged in. Your business is pending approval.');
+        await checkAuth();
+        setTimeout(() => navigate('/user-dashboard/my-business'), 2000);
+      } else {
+        // No token means verification needed
+        setRegistrationComplete(true);
+        setSuccess('Account and business created successfully! Please check your email to verify your account.');
+      }
+    } catch (error) {
+      setError(error.response?.data?.error || 'Failed to create account. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
@@ -210,6 +271,176 @@ const AddBusiness = () => {
     }
   };
 
+  // Show simplified form for logged-out users
+  if (!user) {
+    // Show verification message if registration complete
+    if (registrationComplete) {
+      return (
+        <div className="auth-page">
+          <div className="auth-container verification-sent">
+            <div className="verification-icon">
+              <i className="fas fa-envelope-open-text"></i>
+            </div>
+            <h2>Check Your Email</h2>
+            <p className="verification-message">
+              We've sent a verification link to <strong>{simpleFormData.email}</strong>
+            </p>
+            <p className="verification-instructions">
+              Please click the link in the email to verify your account.
+              Once verified, you can log in to your account.
+            </p>
+            <div className="verification-tips">
+              <p><i className="fas fa-info-circle"></i> Didn't receive the email?</p>
+              <ul>
+                <li>Check your spam or junk folder</li>
+                <li>Make sure you entered the correct email</li>
+                <li>Wait a few minutes and try again</li>
+              </ul>
+            </div>
+            <Link to="/login" className="btn-primary">
+              <i className="fas fa-sign-in-alt"></i> Go to Login
+            </Link>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="auth-page">
+        <div className="auth-container" style={{ maxWidth: '600px' }}>
+          <h2><i className="fas fa-plus-circle"></i> Add Your Business for FREE</h2>
+          <p style={{ fontSize: '16px', color: '#059669', fontWeight: '600', marginBottom: '10px' }}>
+            <i className="fas fa-check-circle"></i> Quick signup - Create your account and business in one step!
+          </p>
+          <p>Fill out the form below to create your account and submit your business for listing approval.</p>
+
+          {error && <div ref={errorRef} className="alert alert-error alert-visible"><i className="fas fa-exclamation-circle"></i> <span>{error}</span></div>}
+          {success && <div ref={successRef} className="alert alert-success alert-visible"><i className="fas fa-check-circle"></i> <span>{success}</span></div>}
+
+          <form onSubmit={handleSimpleSubmit}>
+            <div className="form-group">
+              <label><i className="fas fa-briefcase"></i> Business Name *</label>
+              <input
+                type="text"
+                required
+                placeholder="Enter your business name"
+                value={simpleFormData.businessName}
+                onChange={(e) => setSimpleFormData({ ...simpleFormData, businessName: e.target.value })}
+              />
+            </div>
+
+            <div className="form-group">
+              <label><i className="fas fa-tag"></i> Category *</label>
+              <select
+                required
+                value={simpleFormData.categoryId}
+                onChange={(e) => setSimpleFormData({ ...simpleFormData, categoryId: e.target.value })}
+              >
+                <option value="">Select a category</option>
+                {categories.map(cat => <option key={cat.id} value={cat.id}>{cat.name}</option>)}
+              </select>
+            </div>
+
+            <div className="form-group">
+              <label><i className="fas fa-envelope"></i> Email Address *</label>
+              <input
+                type="email"
+                required
+                placeholder="your@email.com"
+                value={simpleFormData.email}
+                onChange={(e) => setSimpleFormData({ ...simpleFormData, email: e.target.value })}
+              />
+            </div>
+
+            <div className="form-group">
+              <label><i className="fas fa-lock"></i> Password *</label>
+              <div className="password-input-wrapper">
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  required
+                  placeholder="At least 6 characters"
+                  value={simpleFormData.password}
+                  onChange={(e) => setSimpleFormData({ ...simpleFormData, password: e.target.value })}
+                />
+                <button
+                  type="button"
+                  className="password-toggle"
+                  onClick={() => setShowPassword(!showPassword)}
+                  tabIndex={-1}
+                >
+                  <i className={`fas ${showPassword ? 'fa-eye-slash' : 'fa-eye'}`}></i>
+                </button>
+              </div>
+            </div>
+
+            <div className="form-group">
+              <label><i className="fas fa-phone"></i> Phone Number *</label>
+              <input
+                type="tel"
+                required
+                placeholder="(555) 123-4567"
+                value={simpleFormData.phone}
+                onChange={(e) => setSimpleFormData({ ...simpleFormData, phone: e.target.value })}
+              />
+            </div>
+
+            <div className="form-group">
+              <label><i className="fas fa-map-marker-alt"></i> Address *</label>
+              <input
+                type="text"
+                required
+                placeholder="123 Main Street"
+                value={simpleFormData.address}
+                onChange={(e) => setSimpleFormData({ ...simpleFormData, address: e.target.value })}
+              />
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '15px' }}>
+              <div className="form-group">
+                <label><i className="fas fa-city"></i> City</label>
+                <input
+                  type="text"
+                  placeholder="City"
+                  value={simpleFormData.city}
+                  onChange={(e) => setSimpleFormData({ ...simpleFormData, city: e.target.value })}
+                />
+              </div>
+              <div className="form-group">
+                <label><i className="fas fa-map"></i> State</label>
+                <input
+                  type="text"
+                  placeholder="CA"
+                  maxLength="2"
+                  value={simpleFormData.state}
+                  onChange={(e) => setSimpleFormData({ ...simpleFormData, state: e.target.value.toUpperCase() })}
+                />
+              </div>
+              <div className="form-group">
+                <label><i className="fas fa-mail-bulk"></i> Zip Code</label>
+                <input
+                  type="text"
+                  placeholder="12345"
+                  value={simpleFormData.zipCode}
+                  onChange={(e) => setSimpleFormData({ ...simpleFormData, zipCode: e.target.value })}
+                />
+              </div>
+            </div>
+
+            <button type="submit" className="btn-primary" disabled={loading} style={{ width: '100%', marginTop: '10px' }}>
+              <i className={`fas ${loading ? 'fa-spinner fa-spin' : 'fa-user-plus'}`}></i>
+              {loading ? ' Creating Account...' : ' Create Account & Submit Business'}
+            </button>
+
+            <p style={{ textAlign: 'center', marginTop: '20px', color: '#7f8c8d', fontSize: '14px' }}>
+              <i className="fas fa-info-circle"></i> Already have an account? <Link to="/login">Sign in here</Link>
+            </p>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
+  // Full form for logged-in users - redirect to dashboard
   return (
     <div className="auth-page">
       <div className="auth-container" style={{ maxWidth: '700px' }}>
@@ -221,50 +452,6 @@ const AddBusiness = () => {
 
         {error && <div ref={errorRef} className="alert alert-error alert-visible"><i className="fas fa-exclamation-circle"></i> <span>{error}</span></div>}
         {success && <div ref={successRef} className="alert alert-success alert-visible"><i className="fas fa-check-circle"></i> <span>{success}</span></div>}
-
-        {showAuthOptions && !user && (
-          <div className="auth-options-card" style={{
-            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-            color: 'white',
-            padding: '30px',
-            borderRadius: '12px',
-            marginBottom: '25px',
-            textAlign: 'center'
-          }}>
-            <h3 style={{ margin: '0 0 15px 0', fontSize: '22px' }}>
-              <i className="fas fa-user-plus"></i> Create Account or Sign In
-            </h3>
-            <p style={{ margin: '0 0 20px 0', opacity: 0.95 }}>
-              Link your business to your account to manage it easily!
-            </p>
-            <div style={{ display: 'flex', gap: '15px', justifyContent: 'center', flexWrap: 'wrap' }}>
-              <Link to="/register" className="btn-auth-option">
-                <i className="fas fa-user-plus"></i> Create Account
-              </Link>
-              <Link to="/login" className="btn-auth-option-secondary">
-                <i className="fas fa-sign-in-alt"></i> Sign In
-              </Link>
-            </div>
-          </div>
-        )}
-
-        {showAuthOptions && user && (
-          <div className="link-business-card" style={{
-            background: '#f0f9ff',
-            border: '2px solid #667eea',
-            padding: '20px',
-            borderRadius: '12px',
-            marginBottom: '25px',
-            textAlign: 'center'
-          }}>
-            <p style={{ margin: '0 0 15px 0', color: '#374151' }}>
-              <i className="fas fa-link"></i> Link your business to your account?
-            </p>
-            <button onClick={handleLinkBusiness} disabled={loading} className="btn-link-business">
-              {loading ? 'Linking...' : 'Link Business to Account'}
-            </button>
-          </div>
-        )}
 
         <form onSubmit={handleSubmit} noValidate onReset={(e) => {
           e.preventDefault();
@@ -382,171 +569,6 @@ const AddBusiness = () => {
               placeholder="https://yourbusiness.com"
               value={formData.website}
               onChange={(e) => setFormData({ ...formData, website: e.target.value })}
-            />
-          </div>
-
-          {/* Images Section */}
-          <h3 style={{ marginTop: '30px', marginBottom: '15px', color: '#2c3e50' }}>
-            <i className="fas fa-images"></i> Business Photos (Optional)
-          </h3>
-
-          <div className="form-group">
-            <label>Upload Images (Max 2MB each)</label>
-            <input
-              type="file"
-              accept="image/*"
-              multiple
-              onChange={handleImageChange}
-              style={{ padding: '10px' }}
-            />
-            {imagePreviews.length > 0 && (
-              <div className="image-previews" style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))',
-                gap: '10px',
-                marginTop: '15px'
-              }}>
-                {imagePreviews.map((preview, index) => (
-                  <div key={index} style={{ position: 'relative' }}>
-                    <img
-                      src={preview}
-                      alt={`Preview ${index + 1}`}
-                      style={{
-                        width: '100%',
-                        height: '100px',
-                        objectFit: 'cover',
-                        borderRadius: '8px'
-                      }}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => removeImage(index)}
-                      style={{
-                        position: 'absolute',
-                        top: '-8px',
-                        right: '-8px',
-                        background: '#ef4444',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '50%',
-                        width: '24px',
-                        height: '24px',
-                        cursor: 'pointer',
-                        fontSize: '12px'
-                      }}
-                    >
-                      <i className="fas fa-times"></i>
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Videos Section */}
-          <h3 style={{ marginTop: '30px', marginBottom: '15px', color: '#2c3e50' }}>
-            <i className="fas fa-video"></i> Business Videos (Optional)
-          </h3>
-
-          <div className="form-group">
-            <label>Video URLs (YouTube, Vimeo, or direct links)</label>
-            {videoUrls.map((url, index) => (
-              <div key={index} style={{ display: 'flex', gap: '10px', marginBottom: '10px' }}>
-                <input
-                  type="url"
-                  placeholder="https://youtube.com/watch?v=..."
-                  value={url}
-                  onChange={(e) => handleVideoUrlChange(index, e.target.value)}
-                  style={{ flex: 1 }}
-                />
-                {videoUrls.length > 1 && (
-                  <button
-                    type="button"
-                    onClick={() => removeVideoUrl(index)}
-                    style={{
-                      background: '#ef4444',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '6px',
-                      padding: '0 15px',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    <i className="fas fa-trash"></i>
-                  </button>
-                )}
-              </div>
-            ))}
-            <button
-              type="button"
-              onClick={addVideoUrl}
-              style={{
-                background: '#f3f4f6',
-                color: '#374151',
-                border: '1px solid #e5e7eb',
-                borderRadius: '6px',
-                padding: '8px 16px',
-                cursor: 'pointer',
-                fontSize: '14px'
-              }}
-            >
-              <i className="fas fa-plus"></i> Add Another Video
-            </button>
-          </div>
-
-          <h3 style={{ marginTop: '30px', marginBottom: '15px', color: '#2c3e50' }}>
-            <i className="fas fa-share-alt"></i> Social Media Links (Optional)
-          </h3>
-
-          <div className="form-group">
-            <label><i className="fab fa-facebook"></i> Facebook</label>
-            <input
-              type="url"
-              placeholder="https://facebook.com/yourpage"
-              value={formData.socialLinks.facebook}
-              onChange={(e) => setFormData({
-                ...formData,
-                socialLinks: { ...formData.socialLinks, facebook: e.target.value }
-              })}
-            />
-          </div>
-
-          <div className="form-group">
-            <label><i className="fab fa-twitter"></i> Twitter</label>
-            <input
-              type="url"
-              placeholder="https://twitter.com/yourhandle"
-              value={formData.socialLinks.twitter}
-              onChange={(e) => setFormData({
-                ...formData,
-                socialLinks: { ...formData.socialLinks, twitter: e.target.value }
-              })}
-            />
-          </div>
-
-          <div className="form-group">
-            <label><i className="fab fa-instagram"></i> Instagram</label>
-            <input
-              type="url"
-              placeholder="https://instagram.com/yourhandle"
-              value={formData.socialLinks.instagram}
-              onChange={(e) => setFormData({
-                ...formData,
-                socialLinks: { ...formData.socialLinks, instagram: e.target.value }
-              })}
-            />
-          </div>
-
-          <div className="form-group">
-            <label><i className="fab fa-linkedin"></i> LinkedIn</label>
-            <input
-              type="url"
-              placeholder="https://linkedin.com/company/yourcompany"
-              value={formData.socialLinks.linkedin}
-              onChange={(e) => setFormData({
-                ...formData,
-                socialLinks: { ...formData.socialLinks, linkedin: e.target.value }
-              })}
             />
           </div>
 

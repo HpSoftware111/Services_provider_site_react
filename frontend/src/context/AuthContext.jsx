@@ -75,6 +75,18 @@ export const AuthProvider = ({ children }) => {
     return response.data;
   };
 
+  const providerSignup = async (signupData) => {
+    const response = await api.post('/auth/provider-signup', signupData);
+    // Only set token and login if email is verified (token is provided)
+    if (response.data.token) {
+      localStorage.setItem('token', response.data.token);
+      localStorage.setItem('user', JSON.stringify(response.data.user));
+      setUser(response.data.user);
+    }
+    // Return response data (token may be null if verification needed)
+    return response.data;
+  };
+
   const logout = () => {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
@@ -82,7 +94,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, adminLogin, register, logout, checkAuth }}>
+    <AuthContext.Provider value={{ user, loading, login, adminLogin, register, providerSignup, logout, checkAuth }}>
       {children}
     </AuthContext.Provider>
   );

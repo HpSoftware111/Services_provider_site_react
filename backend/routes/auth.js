@@ -3,7 +3,7 @@ const router = express.Router();
 const { Op } = require('sequelize');
 const crypto = require('crypto');
 const { body, validationResult } = require('express-validator');
-const { User } = require('../models');
+const { User, Business, Category } = require('../models');
 const generateToken = require('../utils/generateToken');
 const { protect } = require('../middleware/auth');
 const logActivity = require('../utils/logActivity');
@@ -116,6 +116,223 @@ router.post('/register', [
     });
   } catch (error) {
     res.status(500).json({ error: 'Server error during registration' });
+  }
+});
+
+// @route   POST /api/auth/provider-signup
+// @desc    Register a new provider (business owner) with business - auto-login after signup
+// @access  Public
+router.post('/provider-signup', [
+  body('businessName').trim().notEmpty().withMessage('Business name is required'),
+  body('categoryId').notEmpty().withMessage('Category is required'),
+  body('email').isEmail().withMessage('Please provide a valid email'),
+  body('phone').trim().notEmpty().withMessage('Phone number is required'),
+  body('address').trim().notEmpty().withMessage('Address is required'),
+  body('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters')
+], async (req, res) => {
+  try {
+    // Check for validation errors
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        error: errors.array()[0].msg || 'Validation failed',
+        errors: errors.array()
+      });
+    }
+
+    const { businessName, categoryId, email, phone, address, password } = req.body;
+
+    // Check if user exists
+    const userExists = await User.findOne({ where: { email } });
+    if (userExists) {
+      return res.status(400).json({
+        success: false,
+        error: 'User already exists with this email. Please sign in instead.'
+      });
+    }
+
+    // Validate category exists
+    const category = await Category.findByPk(categoryId);
+    if (!category) {
+      return res.status(400).json({
+        success: false,
+        error: 'Selected category does not exist'
+      });
+    }
+
+    const bypassVerification = process.env.BYPASS_EMAIL_VERIFICATION === 'true' ||
+      process.env.BYPASS_EMAIL_VERIFICATION === '1' ||
+      process.env.BYPASS_EMAIL_VERIFICATION === 'True' ||
+      process.env.BYPASS_EMAIL_VERIFICATION === 'TRUE';
+    const autoVerify = bypassVerification;
+
+    const emailVerificationToken = crypto.randomBytes(32).toString('hex');
+    const emailVerificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+
+    // Generate slug from business name
+    const generateSlug = (name) => {
+      return name
+        .toLowerCase()
+        .replace(/[^\w\s-]/g, '')
+        .replace(/\s+/g, '-')
+        .replace(/-+/g, '-')
+        .trim() + '-' + Date.now();
+    };
+
+    const slug = generateSlug(businessName);
+
+    // Create user with business_owner role
+    const user = await User.create({
+      name: businessName, // Use business name as user name initially
+      email,
+      phone,
+      password,
+      role: 'business_owner',
+      isEmailVerified: autoVerify,
+      emailVerificationToken: autoVerify ? null : emailVerificationToken,
+      emailVerificationExpires: autoVerify ? null : emailVerificationExpires
+    });
+
+    // Create business linked to the user
+    const business = await Business.create({
+      name: businessName,
+      slug: slug,
+      description: `Welcome to ${businessName}!`, // Default description
+      categoryId: parseInt(categoryId),
+      ownerId: user.id,
+      address: address,
+      city: req.body.city || '',
+      state: req.body.state || '',
+      zipCode: req.body.zipCode || null,
+      country: req.body.country || 'USA',
+      phone: phone,
+      email: email,
+      isActive: false, // New businesses need approval
+      isVerified: false
+    });
+
+    // Update user's businessId
+    await user.update({ businessId: business.id });
+
+    // Send email verification if not bypassed
+    if (!autoVerify) {
+      // Determine frontend URL based on environment
+      const isDevelopment = process.env.NODE_ENV === 'development';
+      const frontendUrl = isDevelopment
+        ? (process.env.FRONTEND_URL || 'http://localhost:3000')
+        : (process.env.PROD_FRONTEND_URL || process.env.FRONTEND_URL || 'http://localhost:3000');
+      // Ensure the URL is properly formatted and token is URL-encoded
+      const encodedToken = encodeURIComponent(emailVerificationToken);
+      const verificationLink = `${frontendUrl}/verify-email?token=${encodedToken}`;
+
+      try {
+        await sendEmail({
+          to: email,
+          subject: 'Verify Your Email - Home Services',
+          html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9f9f9;">
+              <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; text-align: center; border-radius: 8px 8px 0 0;">
+                <h1 style="margin: 0; font-size: 28px;">Welcome to Home Services!</h1>
+                <p style="margin: 10px 0 0 0; font-size: 16px;">Please verify your email address</p>
+              </div>
+              <div style="background-color: white; padding: 30px; border-radius: 0 0 8px 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                <p style="color: #333; font-size: 16px; line-height: 1.6;">
+                  Hi ${businessName},
+                </p>
+                <p style="color: #333; font-size: 16px; line-height: 1.6;">
+                  Thank you for registering your business! Please click the button below to verify your email address.
+                </p>
+                <div style="text-align: center; margin: 30px 0;">
+                  <a href="${verificationLink}" 
+                     style="display: inline-block; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+                            color: white; padding: 15px 40px; text-decoration: none; border-radius: 8px; 
+                            font-weight: 600; font-size: 16px;">
+                    Verify Email
+                  </a>
+                </div>
+                <p style="color: #7f8c8d; font-size: 14px; margin-top: 30px; text-align: center;">
+                  This link will expire in 24 hours. If you didn't create an account, please ignore this email.
+                </p>
+              </div>
+            </div>
+          `
+        });
+      } catch (emailError) {
+        console.error('Error sending verification email:', emailError);
+        // Continue even if email fails
+      }
+    }
+
+    // Log activity
+    await logActivity({
+      type: 'provider_registered',
+      description: `New provider "${user.name}" registered with business "${businessName}"`,
+      userId: user.id,
+      metadata: {
+        userName: user.name,
+        userEmail: user.email,
+        userPhone: user.phone,
+        businessId: business.id,
+        businessName: businessName
+      }
+    });
+
+    // Send notification email to admin
+    try {
+      await sendEmail({
+        to: process.env.ADMIN_EMAIL || 'admin@citylocal101.com',
+        subject: `New Business Submission: ${businessName}`,
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+            <h2>New Business Submission</h2>
+            <p><strong>Business Name:</strong> ${businessName}</p>
+            <p><strong>Owner:</strong> ${user.name} (${email})</p>
+            <p><strong>Phone:</strong> ${phone}</p>
+            <p><strong>Address:</strong> ${address}</p>
+            <p><strong>Category:</strong> ${category.name}</p>
+            <p>Please review and approve this business listing.</p>
+          </div>
+        `
+      });
+    } catch (emailError) {
+      console.error('Error sending admin notification email:', emailError);
+    }
+
+    // Only generate token and auto-login if email is verified or verification is bypassed
+    let token = null;
+    if (autoVerify) {
+      token = generateToken(user.id);
+      await user.update({ lastLogin: new Date() });
+    }
+
+    res.status(201).json({
+      success: true,
+      message: autoVerify 
+        ? 'Account and business created successfully! Your business is pending approval.'
+        : 'Account and business created successfully! Please check your email to verify your account.',
+      needsVerification: !autoVerify,
+      token, // Only set if email is verified
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        phone: user.phone,
+        role: user.role,
+        isEmailVerified: user.isEmailVerified
+      },
+      business: {
+        id: business.id,
+        name: business.name,
+        status: 'pending'
+      }
+    });
+  } catch (error) {
+    console.error('Provider signup error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Server error during registration'
+    });
   }
 });
 

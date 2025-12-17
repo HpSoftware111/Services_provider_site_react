@@ -39,7 +39,7 @@ const Header = () => {
                 </>
               )}
               {!user && (
-                <li><Link to="/user-dashboard/my-business" className="btn-request-service-header"><i className="fas fa-plus-circle"></i> Add a Business</Link></li>
+                <li><Link to="/add-business" className="btn-request-service-header"><i className="fas fa-plus-circle"></i> Add a Business</Link></li>
               )}
             </ul>
           </nav>
