@@ -256,7 +256,7 @@ const UserBusinesses = () => {
         maxContentLength: Infinity,
         maxBodyLength: Infinity
       });
-      setMessage({ type: 'success', text: 'Business created successfully! Pending admin approval.' });
+      setMessage({ type: 'success', text: 'Thank you for claiming your business. Your profile will not appear publicly until it is reviewed and approved by our admin team. You will be notified once the status changes.' });
       setShowCreateModal(false);
       fetchBusinesses();
       setTimeout(() => setMessage({ type: '', text: '' }), 3000);

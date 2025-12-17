@@ -98,6 +98,32 @@ const MyBusiness = () => {
         </div>
       )}
 
+      {/* Show verification message if any business is not verified */}
+      {businesses.length > 0 && businesses.some(business => !business.isVerified || !business.isActive || !business.approvedAt) && (
+        <div style={{
+          background: '#f0f9ff',
+          border: '1px solid #bae6fd',
+          borderRadius: '8px',
+          padding: '20px',
+          marginBottom: '20px',
+          fontSize: '15px',
+          color: '#1e40af',
+          display: 'flex',
+          alignItems: 'flex-start',
+          gap: '12px'
+        }}>
+          <i className="fas fa-info-circle" style={{ fontSize: '20px', marginTop: '2px', flexShrink: 0 }}></i>
+          <div>
+            <p style={{ margin: 0, fontWeight: '600', marginBottom: '4px' }}>
+              Thank you for claiming your business.
+            </p>
+            <p style={{ margin: 0 }}>
+              Your profile will not appear publicly until it is reviewed and approved by our admin team. You will be notified once the status changes.
+            </p>
+          </div>
+        </div>
+      )}
+
       {businesses.length === 0 ? (
         <div className="empty-state">
           <i className="fas fa-store-slash"></i>

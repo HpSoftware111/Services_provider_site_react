@@ -79,15 +79,15 @@ const BusinessDetail = () => {
 
     try {
       await api.post(`/businesses/${id}/contact`, contactForm);
-      setContactFormStatus({ 
-        success: 'Your message has been sent to the business. They will contact you soon!', 
-        error: '' 
+      setContactFormStatus({
+        success: 'Your message has been sent to the administrator.',
+        error: ''
       });
       setContactForm({ name: '', email: '', phone: '', message: '' });
     } catch (error) {
-      setContactFormStatus({ 
-        success: '', 
-        error: error.response?.data?.error || 'Failed to send message. Please try again.' 
+      setContactFormStatus({
+        success: '',
+        error: error.response?.data?.error || 'Failed to send message. Please try again.'
       });
     } finally {
       setContactFormLoading(false);
@@ -99,7 +99,7 @@ const BusinessDetail = () => {
       navigate('/login');
       return;
     }
-    
+
     try {
       await api.post(`/businesses/${id}/claim`);
       alert('Your claim request has been submitted. An admin will review it shortly.');
@@ -112,7 +112,7 @@ const BusinessDetail = () => {
   const formatHours = (hours) => {
     const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
     const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-    
+
     return days
       .map((day, index) => {
         const dayHours = hours?.[day];
@@ -129,7 +129,7 @@ const BusinessDetail = () => {
 
   const getMediaItems = () => {
     const items = [];
-    
+
     let images = [];
     if (business?.images) {
       if (Array.isArray(business.images)) {
@@ -145,7 +145,7 @@ const BusinessDetail = () => {
         }
       }
     }
-    
+
     if (images.length > 0) {
       images.forEach(img => {
         if (img) {
@@ -153,7 +153,7 @@ const BusinessDetail = () => {
         }
       });
     }
-    
+
     let videos = [];
     if (business?.videos) {
       if (Array.isArray(business.videos)) {
@@ -169,7 +169,7 @@ const BusinessDetail = () => {
         }
       }
     }
-    
+
     if (videos.length > 0) {
       videos.forEach(video => {
         if (video) {
@@ -177,7 +177,7 @@ const BusinessDetail = () => {
         }
       });
     }
-    
+
     return items;
   };
 
@@ -255,7 +255,7 @@ const BusinessDetail = () => {
                   </span>
                 )}
               </div>
-              
+
               {business.category && (
                 <div className="business-category-tag">
                   <i className="fas fa-tag"></i>
@@ -330,12 +330,12 @@ const BusinessDetail = () => {
                 <div className="media-gallery-container">
                   <div className="media-main-display" onClick={() => mediaItems.length > 0 && setShowMediaModal(true)}>
                     {mediaItems[activeMediaIndex]?.type === 'image' ? (
-                      <img 
-                        src={mediaItems[activeMediaIndex].url} 
+                      <img
+                        src={mediaItems[activeMediaIndex].url}
                         alt={`${business.name} - ${activeMediaIndex + 1}`}
                       />
                     ) : (
-                      <video 
+                      <video
                         src={mediaItems[activeMediaIndex]?.url}
                         controls
                         onClick={(e) => e.stopPropagation()}
@@ -351,7 +351,7 @@ const BusinessDetail = () => {
                   {mediaItems.length > 1 && (
                     <div className="media-thumbnails-grid">
                       {mediaItems.map((item, index) => (
-                        <div 
+                        <div
                           key={index}
                           className={`media-thumbnail ${index === activeMediaIndex ? 'active' : ''}`}
                           onClick={() => setActiveMediaIndex(index)}
@@ -385,8 +385,8 @@ const BusinessDetail = () => {
                   <i className="fas fa-comment-slash"></i>
                   <h3>No reviews yet</h3>
                   <p>Be the first to review this business!</p>
-                  <button 
-                    className="btn-primary" 
+                  <button
+                    className="btn-primary"
                     onClick={() => navigate('/write-review', { state: { businessId: id, businessName: business.name } })}
                   >
                     <i className="fas fa-pen"></i>
@@ -406,10 +406,10 @@ const BusinessDetail = () => {
                             <div>
                               <div className="review-user-name">{review.user?.name || 'Anonymous'}</div>
                               <div className="review-date">
-                                {new Date(review.createdAt).toLocaleDateString('en-US', { 
-                                  year: 'numeric', 
-                                  month: 'long', 
-                                  day: 'numeric' 
+                                {new Date(review.createdAt).toLocaleDateString('en-US', {
+                                  year: 'numeric',
+                                  month: 'long',
+                                  day: 'numeric'
                                 })}
                               </div>
                             </div>
@@ -426,8 +426,8 @@ const BusinessDetail = () => {
                     ))}
                   </div>
                   <div className="write-review-cta">
-                    <button 
-                      className="btn-primary btn-full-width" 
+                    <button
+                      className="btn-primary btn-full-width"
                       onClick={() => navigate('/write-review', { state: { businessId: id, businessName: business.name } })}
                     >
                       <i className="fas fa-pen"></i>
@@ -466,7 +466,7 @@ const BusinessDetail = () => {
                   View on Google Maps
                 </a>
               </div>
-              
+
               {mapCoords && (mapCoords.lat || mapCoords.address) ? (
                 <div className="map-container">
                   {mapCoords.lat && mapCoords.lng ? (
@@ -489,7 +489,7 @@ const BusinessDetail = () => {
                   )}
                   <div className="map-overlay">
                     <a
-                      href={mapCoords.lat && mapCoords.lng 
+                      href={mapCoords.lat && mapCoords.lng
                         ? `https://www.openstreetmap.org/?mlat=${mapCoords.lat}&mlon=${mapCoords.lng}&zoom=15`
                         : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(mapCoords.address)}`}
                       target="_blank"
@@ -531,8 +531,8 @@ const BusinessDetail = () => {
               <h2>Send a Message</h2>
             </div>
             <div className="section-content">
-              <p className="form-description">Have a question? Send a message directly to this business.</p>
-              
+              <p className="form-description">Have a question? Send a message directly to Administrator.</p>
+
               {contactFormStatus.success && (
                 <div className="alert alert-success">
                   <i className="fas fa-check-circle"></i>
@@ -705,8 +705,8 @@ const BusinessDetail = () => {
                 <i className="fas fa-user-shield"></i>
                 Owner Dashboard
               </h3>
-              <button 
-                onClick={() => navigate('/user-dashboard')} 
+              <button
+                onClick={() => navigate('/user-dashboard')}
                 className="btn-primary btn-full-width"
               >
                 <i className="fas fa-edit"></i>
@@ -731,14 +731,14 @@ const BusinessDetail = () => {
             )}
             {mediaItems.length > 1 && (
               <div className="modal-navigation">
-                <button 
+                <button
                   className="modal-nav-btn prev"
                   onClick={() => setActiveMediaIndex(i => i === 0 ? mediaItems.length - 1 : i - 1)}
                 >
                   <i className="fas fa-chevron-left"></i>
                 </button>
                 <span className="modal-counter">{activeMediaIndex + 1} / {mediaItems.length}</span>
-                <button 
+                <button
                   className="modal-nav-btn next"
                   onClick={() => setActiveMediaIndex(i => i === mediaItems.length - 1 ? 0 : i + 1)}
                 >

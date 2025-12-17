@@ -58,65 +58,6 @@ router.get('/', optionalAuth, async (req, res) => {
       ];
     }
 
-    // Search by location (city or state) - works independently
-    // If both search and location are provided, they work together with AND logic
-    if (req.query.location && req.query.location.trim()) {
-      const locationSearch = req.query.location.trim();
-      let locationCondition;
-
-      // Parse location string - handle formats like "Detroit, MI", "Detroit", "MI", etc.
-      if (locationSearch.includes(',')) {
-        // Format: "City, State" - split and search both parts
-        const parts = locationSearch.split(',').map(p => p.trim()).filter(p => p);
-        if (parts.length >= 2) {
-          // We have both city and state parts - search for exact match
-          const cityPart = parts[0];
-          const statePart = parts.slice(1).join(' ').trim(); // Handle multi-word states
-
-          // Search for: (city matches AND state matches) OR city matches OR state matches
-          locationCondition = {
-            [Op.or]: [
-              {
-                [Op.and]: [
-                  { city: { [Op.like]: `%${cityPart}%` } },
-                  { state: { [Op.like]: `%${statePart}%` } }
-                ]
-              },
-              { city: { [Op.like]: `%${cityPart}%` } },
-              { state: { [Op.like]: `%${statePart}%` } }
-            ]
-          };
-        } else {
-          // Only one part after comma - treat as city or state
-          locationCondition = {
-            [Op.or]: [
-              { city: { [Op.like]: `%${parts[0]}%` } },
-              { state: { [Op.like]: `%${parts[0]}%` } }
-            ]
-          };
-        }
-      } else {
-        // No comma - search in both city and state fields
-        locationCondition = {
-          [Op.or]: [
-            { city: { [Op.like]: `%${locationSearch}%` } },
-            { state: { [Op.like]: `%${locationSearch}%` } }
-          ]
-        };
-      }
-
-      // If search is also provided, combine with AND logic
-      if (baseWhere[Op.or]) {
-        // We have both search and location - combine with AND
-        const searchCondition = { [Op.or]: baseWhere[Op.or] };
-        baseWhere[Op.and] = [searchCondition, locationCondition];
-        delete baseWhere[Op.or];
-      } else {
-        // Only location is provided - merge location condition into baseWhere
-        Object.assign(baseWhere, locationCondition);
-      }
-    }
-
     // Filter by category - support multiple categories (accept both singular and plural)
     const categoryParam = req.query.category || req.query.categories;
     if (categoryParam) {
@@ -127,22 +68,118 @@ router.get('/', optionalAuth, async (req, res) => {
     }
 
     // Filter by city - support multiple cities (accept both singular and plural)
+    // Use exact match or prefix match for better accuracy
     const cityParam = req.query.city || req.query.cities;
     if (cityParam) {
       const cities = Array.isArray(cityParam) ? cityParam : cityParam.split(',').filter(c => c);
       if (cities.length > 0) {
-        baseWhere.city = {
-          [Op.or]: cities.map(city => ({ [Op.like]: `%${city.trim()}%` }))
-        };
+        const trimmedCities = cities.map(c => c.trim());
+        if (trimmedCities.length === 1) {
+          // Single city - use exact match or prefix match (match from start to avoid partial matches)
+          const city = trimmedCities[0];
+          baseWhere.city = {
+            [Op.or]: [
+              { city: city }, // Exact match
+              { city: { [Op.like]: `${city}%` } } // Match from start
+            ]
+          };
+        } else {
+          // Multiple cities - use OR with exact or prefix match for each
+          const cityConditions = trimmedCities.flatMap(city => [
+            { city: city }, // Exact match
+            { city: { [Op.like]: `${city}%` } } // Match from start
+          ]);
+          baseWhere.city = {
+            [Op.or]: cityConditions
+          };
+        }
       }
     }
 
     // Filter by state - support multiple states (accept both singular and plural)
+    // Use exact match for states (they should be 2-letter codes or full names)
     const stateParam = req.query.state || req.query.states;
     if (stateParam) {
       const states = Array.isArray(stateParam) ? stateParam : stateParam.split(',').filter(s => s);
       if (states.length > 0) {
-        baseWhere.state = { [Op.in]: states.map(s => s.trim()) };
+        const trimmedStates = states.map(s => s.trim().toUpperCase());
+        baseWhere.state = { [Op.in]: trimmedStates };
+      }
+    }
+
+    // Search by location (city or state) - works independently
+    // Only process if cities/states filters are NOT already set (to avoid conflicts)
+    if (req.query.location && req.query.location.trim() && !cityParam && !stateParam) {
+      const locationSearch = req.query.location.trim();
+      let locationCondition;
+
+      // Parse location string - handle formats like "Detroit, MI", "Detroit", "MI", etc.
+      if (locationSearch.includes(',')) {
+        // Format: "City, State" - split and search both parts
+        const parts = locationSearch.split(',').map(p => p.trim()).filter(p => p);
+        if (parts.length >= 2) {
+          // We have both city and state parts - prioritize exact match
+          const cityPart = parts[0];
+          const statePart = parts.slice(1).join(' ').trim().toUpperCase();
+
+          // Search for: (city matches AND state matches) - prioritize this combination
+          locationCondition = {
+            [Op.and]: [
+              {
+                [Op.or]: [
+                  { city: cityPart }, // Exact match
+                  { city: { [Op.like]: `${cityPart}%` } } // Match from start
+                ]
+              },
+              { state: statePart } // Exact state match
+            ]
+          };
+        } else {
+          // Only one part after comma - treat as city or state
+          const part = parts[0];
+          locationCondition = {
+            [Op.or]: [
+              { city: part }, // Exact match
+              { city: { [Op.like]: `${part}%` } }, // Match from start
+              { state: part.toUpperCase() } // Exact state match
+            ]
+          };
+        }
+      } else {
+        // No comma - check if it's a state code (2 letters) or city name
+        const locationUpper = locationSearch.toUpperCase();
+        const isStateCode = locationUpper.length === 2 && /^[A-Z]{2}$/.test(locationUpper);
+
+        if (isStateCode) {
+          // Likely a state code - search state field with exact match
+          locationCondition = {
+            state: locationUpper
+          };
+        } else {
+          // Likely a city name - search city field (match from start for better accuracy)
+          locationCondition = {
+            [Op.or]: [
+              { city: locationSearch }, // Exact match
+              { city: { [Op.like]: `${locationSearch}%` } } // Match from start
+            ]
+          };
+        }
+      }
+
+      // If search is also provided, combine with AND logic
+      if (baseWhere[Op.or]) {
+        // We have both search and location - combine with AND
+        const searchCondition = { [Op.or]: baseWhere[Op.or] };
+        baseWhere[Op.and] = baseWhere[Op.and] || [];
+        baseWhere[Op.and].push(searchCondition, locationCondition);
+        delete baseWhere[Op.or];
+      } else {
+        // Only location is provided - merge location condition into baseWhere
+        if (baseWhere[Op.and]) {
+          baseWhere[Op.and].push(locationCondition);
+        } else {
+          Object.assign(baseWhere, locationCondition);
+        }
       }
     }
 
