@@ -96,6 +96,10 @@ SubscriptionPlan.hasMany(UserSubscription, { foreignKey: 'subscriptionPlanId', a
 User.hasMany(PhoneVerification, { foreignKey: 'userId', as: 'phoneVerifications' });
 PhoneVerification.belongsTo(User, { foreignKey: 'userId', as: 'user' });
 
+// Contact associations
+Business.hasMany(Contact, { foreignKey: 'businessId', as: 'contacts' });
+Contact.belongsTo(Business, { foreignKey: 'businessId', as: 'business' });
+
 module.exports = {
   sequelize,
   User,

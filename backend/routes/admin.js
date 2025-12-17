@@ -921,6 +921,14 @@ router.get('/contacts', async (req, res) => {
     const offset = (page - 1) * limit;
 
     const { count, rows: contacts } = await Contact.findAndCountAll({
+      include: [
+        {
+          model: Business,
+          as: 'business',
+          attributes: ['id', 'name', 'slug', 'city', 'state'],
+          required: false
+        }
+      ],
       order: [['createdAt', 'DESC']],
       limit,
       offset
@@ -982,6 +990,124 @@ router.delete('/contacts/:id', async (req, res) => {
   } catch (error) {
     // Removed console.error'Admin delete contact error:', error);
     res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// @route   POST /api/admin/contacts/:id/send-to-provider
+// @desc    Send contact message to business owner/provider
+// @access  Private (Admin only)
+router.post('/contacts/:id/send-to-provider', async (req, res) => {
+  try {
+    const contact = await Contact.findByPk(req.params.id, {
+      include: [
+        {
+          model: Business,
+          as: 'business',
+          include: [
+            {
+              model: User,
+              as: 'owner',
+              attributes: ['id', 'name', 'email']
+            }
+          ]
+        }
+      ]
+    });
+
+    if (!contact) {
+      return res.status(404).json({ error: 'Contact not found' });
+    }
+
+    if (!contact.business) {
+      return res.status(400).json({ error: 'This message is not associated with a business' });
+    }
+
+    if (!contact.business.owner || !contact.business.owner.email) {
+      return res.status(400).json({ error: 'Business owner email not found' });
+    }
+
+    const sendEmail = require('../utils/sendEmail');
+    await sendEmail({
+      to: contact.business.owner.email,
+      subject: `New Customer Inquiry for ${contact.business.name}`,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9f9f9;">
+          <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; text-align: center; border-radius: 8px 8px 0 0;">
+            <h2 style="margin: 0; font-size: 24px;">New Customer Inquiry</h2>
+            <p style="margin: 10px 0 0 0; font-size: 14px;">CityLocal 101</p>
+          </div>
+          <div style="background-color: white; padding: 30px; border-radius: 0 0 8px 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+            <div style="background-color: #f0f7ff; padding: 15px; border-radius: 4px; margin-bottom: 20px; border-left: 4px solid #667eea;">
+              <strong style="color: #333; display: block; margin-bottom: 5px;">Your Business:</strong>
+              <span style="color: #666; font-size: 16px;">${contact.business.name}</span>
+              <p style="color: #666; margin: 5px 0 0 0; font-size: 14px;">${contact.business.address || ''}, ${contact.business.city || ''}, ${contact.business.state || ''}</p>
+            </div>
+            <p style="color: #333; margin-bottom: 20px;">You have received a new inquiry from a potential customer:</p>
+            <div style="margin-bottom: 20px;">
+              <strong style="color: #333; display: block; margin-bottom: 5px;">Name:</strong>
+              <span style="color: #666;">${contact.name}</span>
+            </div>
+            <div style="margin-bottom: 20px;">
+              <strong style="color: #333; display: block; margin-bottom: 5px;">Email:</strong>
+              <span style="color: #666;">${contact.email}</span>
+            </div>
+            ${contact.phone ? `
+            <div style="margin-bottom: 20px;">
+              <strong style="color: #333; display: block; margin-bottom: 5px;">Phone:</strong>
+              <span style="color: #666;">${contact.phone}</span>
+            </div>
+            ` : ''}
+            <div style="margin-bottom: 20px;">
+              <strong style="color: #333; display: block; margin-bottom: 5px;">Subject:</strong>
+              <span style="color: #666;">${contact.subject}</span>
+            </div>
+            <div style="margin-bottom: 20px;">
+              <strong style="color: #333; display: block; margin-bottom: 5px;">Message:</strong>
+              <div style="color: #666; background-color: #f5f5f5; padding: 15px; border-radius: 4px; margin-top: 10px; line-height: 1.6;">
+                ${contact.message.replace(/\n/g, '<br>')}
+              </div>
+            </div>
+            <p style="color: #7f8c8d; font-size: 14px; margin-top: 30px;">
+              Please respond to this inquiry as soon as possible to provide excellent customer service.
+            </p>
+          </div>
+        </div>
+      `,
+      message: `
+New customer inquiry for ${contact.business.name}:
+
+From:
+Name: ${contact.name}
+Email: ${contact.email}
+${contact.phone ? `Phone: ${contact.phone}` : ''}
+
+Subject: ${contact.subject}
+
+Message:
+${contact.message}
+
+---
+Sent from CityLocal 101
+      `
+    }).catch(() => {});
+
+    // Update contact status to 'replied' since we sent it to provider
+    await contact.update({ status: 'replied', repliedAt: new Date() });
+
+    // Log activity
+    await logActivity({
+      type: 'contact_sent_to_provider',
+      description: `Contact message sent to provider for ${contact.business.name}`,
+      metadata: { contactId: contact.id, businessId: contact.business.id, providerEmail: contact.business.owner.email }
+    });
+
+    res.json({
+      success: true,
+      message: 'Message sent to provider successfully'
+    });
+  } catch (error) {
+    console.error('Send to provider error:', error);
+    res.status(500).json({ error: 'Failed to send message to provider' });
   }
 });
 

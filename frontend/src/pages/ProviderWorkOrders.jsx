@@ -251,46 +251,46 @@ const ProviderWorkOrders = () => {
                                         <div className="work-order-body">
                                             <div className="work-order-info">
                                                 <div className="info-item">
-                                                    <i className="fas fa-user"></i>
-                                                    <span>
+                                                    <i className="fas fa-user" style={{textAlign: 'left', marginLeft: 0}}></i>
+                                                    <span style={{textAlign: 'left', display: 'block', width: '100%'}}>
                                                         <strong>Customer:</strong>{' '}
                                                         {workOrder.customer?.name || 'N/A'}
                                                     </span>
                                                 </div>
                                                 <div className="info-item">
-                                                    <i className="fas fa-tag"></i>
-                                                    <span>
+                                                    <i className="fas fa-tag" style={{textAlign: 'left', marginLeft: 0}}></i>
+                                                    <span style={{textAlign: 'left', display: 'block', width: '100%'}}>
                                                         <strong>Category:</strong>{' '}
                                                         {workOrder.serviceRequest?.category?.name || 'N/A'}
                                                     </span>
                                                 </div>
                                                 <div className="info-item">
-                                                    <i className="fas fa-map-marker-alt"></i>
-                                                    <span>
+                                                    <i className="fas fa-map-marker-alt" style={{textAlign: 'left', marginLeft: 0}}></i>
+                                                    <span style={{textAlign: 'left', display: 'block', width: '100%'}}>
                                                         <strong>Location:</strong>{' '}
                                                         {workOrder.serviceRequest?.zipCode || 'N/A'}
                                                     </span>
                                                 </div>
                                                 {workOrder.proposal && (
                                                     <div className="info-item">
-                                                        <i className="fas fa-dollar-sign"></i>
-                                                        <span>
+                                                        <i className="fas fa-dollar-sign" style={{textAlign: 'left', marginLeft: 0}}></i>
+                                                        <span style={{textAlign: 'left', display: 'block', width: '100%'}}>
                                                             <strong>Amount:</strong>{' '}
                                                             {formatCurrency(workOrder.proposal.price)}
                                                         </span>
                                                     </div>
                                                 )}
                                                 <div className="info-item">
-                                                    <i className="fas fa-calendar"></i>
-                                                    <span>
+                                                    <i className="fas fa-calendar" style={{textAlign: 'left', marginLeft: 0}}></i>
+                                                    <span style={{textAlign: 'left', display: 'block', width: '100%'}}>
                                                         <strong>Created:</strong>{' '}
                                                         {formatDate(workOrder.createdAt)}
                                                     </span>
                                                 </div>
                                                 {workOrder.completedAt && (
                                                     <div className="info-item">
-                                                        <i className="fas fa-check-circle"></i>
-                                                        <span>
+                                                        <i className="fas fa-check-circle" style={{textAlign: 'left', marginLeft: 0}}></i>
+                                                        <span style={{textAlign: 'left', display: 'block', width: '100%'}}>
                                                             <strong>Completed:</strong>{' '}
                                                             {formatDate(workOrder.completedAt)}
                                                         </span>
@@ -300,7 +300,7 @@ const ProviderWorkOrders = () => {
 
                                             {workOrder.serviceRequest?.projectDescription && (
                                                 <div className="work-order-description">
-                                                    <p>{workOrder.serviceRequest.projectDescription.substring(0, 150)}...</p>
+                                                    <p style={{textAlign: 'left', margin: 0}}>{workOrder.serviceRequest.projectDescription.substring(0, 150)}...</p>
                                                 </div>
                                             )}
                                         </div>

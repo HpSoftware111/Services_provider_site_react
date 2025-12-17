@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { Op } = require('sequelize');
 const { protect } = require('../middleware/auth');
-const { Lead, ServiceRequest, Category, SubCategory, User, ProviderProfile, Business, Proposal, WorkOrder } = require('../models');
+const { Lead, ServiceRequest, Category, SubCategory, User, ProviderProfile, Business, Proposal, WorkOrder, Contact } = require('../models');
 const logActivity = require('../utils/logActivity');
 const sendEmail = require('../utils/sendEmail');
 const stripe = require('../config/stripe');
@@ -2336,6 +2336,66 @@ router.get('/payouts', protect, async (req, res) => {
         });
     } catch (error) {
         console.error('Get payouts error:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message || 'Server error'
+        });
+    }
+});
+
+// @route   GET /api/provider/messages
+// @desc    Get all messages sent to provider (business owner)
+// @access  Private (Provider/Business Owner)
+router.get('/messages', protect, async (req, res) => {
+    try {
+        // Get all businesses owned by this provider
+        const businesses = await Business.findAll({
+            where: { ownerId: req.user.id },
+            attributes: ['id']
+        });
+
+        const businessIds = businesses.map(b => b.id);
+
+        if (businessIds.length === 0) {
+            return res.json({
+                success: true,
+                messages: [],
+                count: 0
+            });
+        }
+
+        // Get all contacts for these businesses
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 20;
+        const offset = (page - 1) * limit;
+
+        const { count, rows: messages } = await Contact.findAndCountAll({
+            where: {
+                businessId: { [Op.in]: businessIds },
+                status: { [Op.in]: ['replied', 'resolved'] } // Only messages that were sent to provider
+            },
+            include: [
+                {
+                    model: Business,
+                    as: 'business',
+                    attributes: ['id', 'name', 'slug', 'city', 'state']
+                }
+            ],
+            order: [['createdAt', 'DESC']],
+            limit,
+            offset
+        });
+
+        res.json({
+            success: true,
+            messages,
+            count: messages.length,
+            total: count,
+            page,
+            pages: Math.ceil(count / limit)
+        });
+    } catch (error) {
+        console.error('Get provider messages error:', error);
         res.status(500).json({
             success: false,
             error: error.message || 'Server error'

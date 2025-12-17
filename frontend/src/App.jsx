@@ -52,6 +52,7 @@ import ServiceRequest from './pages/ServiceRequest';
 import ProviderLeads from './pages/ProviderLeads';
 import ProviderWorkOrders from './pages/ProviderWorkOrders';
 import ProviderPayouts from './pages/ProviderPayouts';
+import ProviderTickets from './pages/ProviderTickets';
 import Subscriptions from './pages/Subscriptions';
 import SEOLandingPage from './pages/SEOLandingPage';
 import GoogleAnalytics from './components/GoogleAnalytics';
@@ -116,6 +117,7 @@ function App() {
                   <Route path="leads" element={<ProviderLeads />} />
                   <Route path="work-orders" element={<ProviderWorkOrders />} />
                   <Route path="payouts" element={<ProviderPayouts />} />
+                  <Route path="messages" element={<ProviderTickets />} />
                   <Route path="subscriptions" element={<Subscriptions />} />
                 </Routes>
               </UserDashboardLayout>

@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { Op } = require('sequelize');
 const { sequelize } = require('../config/database');
-const { Business, Category, User } = require('../models');
+const { Business, Category, User, Contact } = require('../models');
 const { protect, optionalAuth } = require('../middleware/auth');
 const logActivity = require('../utils/logActivity');
 
@@ -896,7 +896,7 @@ router.delete('/:id', protect, async (req, res) => {
 });
 
 // @route   POST /api/businesses/:id/contact
-// @desc    Send contact message to business
+// @desc    Send contact message to admin (regarding a business)
 // @access  Public
 router.post('/:id/contact', async (req, res) => {
   try {
@@ -912,19 +912,38 @@ router.post('/:id/contact', async (req, res) => {
       return res.status(400).json({ error: 'Name, email, and message are required' });
     }
 
-    // Send email to business
+    // Create subject with business information
+    const subject = `Message about ${business.name} - ${business.city}, ${business.state}`;
+
+    // Save to Contact model for admin management
+    const contact = await Contact.create({
+      name,
+      email,
+      phone: phone || null,
+      subject,
+      message,
+      businessId: business.id,
+      status: 'new'
+    });
+
+    // Send email to admin
     const sendEmail = require('../utils/sendEmail');
     await sendEmail({
-      to: business.email || process.env.ADMIN_EMAIL,
-      subject: `New inquiry for ${business.name}`,
+      to: process.env.ADMIN_EMAIL || 'admin@citylocal101.com',
+      subject: `New Message About Business: ${business.name}`,
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9f9f9;">
-          <div style="background-color: #667eea; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
-            <h2 style="margin: 0; font-size: 24px;">New Customer Inquiry</h2>
-            <p style="margin: 10px 0 0 0; font-size: 14px;">${business.name}</p>
+          <div style="background-color: #4A90E2; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
+            <h2 style="margin: 0; font-size: 24px;">New Business Inquiry</h2>
+            <p style="margin: 10px 0 0 0; font-size: 14px;">CityLocal 101</p>
           </div>
           <div style="background-color: white; padding: 30px; border-radius: 0 0 8px 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-            <p style="color: #333; margin-bottom: 20px;">You have received a new inquiry from a potential customer:</p>
+            <div style="background-color: #f0f7ff; padding: 15px; border-radius: 4px; margin-bottom: 20px; border-left: 4px solid #4A90E2;">
+              <strong style="color: #333; display: block; margin-bottom: 5px;">Business:</strong>
+              <span style="color: #666; font-size: 16px;">${business.name}</span>
+              <p style="color: #666; margin: 5px 0 0 0; font-size: 14px;">${business.address}, ${business.city}, ${business.state}</p>
+            </div>
+            <p style="color: #333; margin-bottom: 20px;">You have received a new inquiry about this business:</p>
             <div style="margin-bottom: 20px;">
               <strong style="color: #333; display: block; margin-bottom: 5px;">Name:</strong>
               <span style="color: #666;">${name}</span>
@@ -946,25 +965,43 @@ router.post('/:id/contact', async (req, res) => {
               </div>
             </div>
             <p style="color: #7f8c8d; font-size: 14px; margin-top: 30px;">
-              Please respond to this inquiry as soon as possible.
+              This message has been saved to the admin panel for your review.
             </p>
           </div>
         </div>
+      `,
+      message: `
+New business inquiry from CityLocal 101:
+
+Business: ${business.name}
+Address: ${business.address}, ${business.city}, ${business.state}
+
+From:
+Name: ${name}
+Email: ${email}
+${phone ? `Phone: ${phone}` : ''}
+
+Message:
+${message}
+
+---
+Sent from CityLocal 101 Support System
       `
-    });
+    }).catch(() => {});
 
     // Log activity
     await logActivity({
       type: 'business_contact',
-      description: `Contact inquiry sent to ${business.name}`,
-      metadata: { businessId: business.id, businessName: business.name, senderEmail: email }
+      description: `Contact inquiry about ${business.name} from ${name}`,
+      metadata: { businessId: business.id, businessName: business.name, contactId: contact.id, senderEmail: email }
     });
 
     res.json({
       success: true,
-      message: 'Your message has been sent to the business'
+      message: 'Your message has been sent to the administrator.'
     });
   } catch (error) {
+    console.error('Business contact error:', error);
     res.status(500).json({ error: 'Failed to send message' });
   }
 });

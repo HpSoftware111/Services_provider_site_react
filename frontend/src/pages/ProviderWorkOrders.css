@@ -2,6 +2,7 @@
     padding: 30px;
     max-width: 1400px;
     margin: 0 auto;
+    text-align: left !important;
 }
 
 .work-orders-header {
@@ -101,6 +102,7 @@
     grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
     gap: 25px;
     margin-bottom: 30px;
+    text-align: left !important;
 }
 
 .work-order-card {
@@ -110,6 +112,31 @@
     overflow: hidden;
     transition: all 0.3s;
     border: 1px solid #e2e8f0;
+    text-align: left !important;
+}
+
+.work-order-card * {
+    text-align: left !important;
+}
+
+.work-order-card .work-order-actions,
+.work-order-card .work-order-actions * {
+    text-align: center !important;
+}
+
+/* Force left alignment for all text content */
+.work-order-card h1,
+.work-order-card h2,
+.work-order-card h3,
+.work-order-card h4,
+.work-order-card p,
+.work-order-card div,
+.work-order-card span:not(.status-badge) {
+    text-align: left !important;
+}
+
+.work-order-card .status-badge {
+    text-align: center !important;
 }
 
 .work-order-card:hover {
@@ -136,6 +163,7 @@
     margin: 0;
     flex: 1;
     line-height: 1.4;
+    text-align: left !important;
 }
 
 .status-badge {
@@ -159,6 +187,7 @@
 
 .work-order-body {
     padding: 20px;
+    text-align: left !important;
 }
 
 .work-order-info {
@@ -166,25 +195,59 @@
     flex-direction: column;
     gap: 12px;
     margin-bottom: 15px;
+    text-align: left !important;
+    width: 100%;
 }
 
 .info-item {
-    display: flex;
-    align-items: center;
+    display: flex !important;
+    align-items: flex-start;
     gap: 10px;
     color: #4a5568;
     font-size: 0.9rem;
+    text-align: left !important;
+    justify-content: flex-start !important;
+    width: 100%;
+    flex-direction: row !important;
+    margin: 0;
+    padding: 0;
 }
 
 .info-item i {
     color: #667eea;
-    width: 18px;
-    text-align: center;
+    width: 18px !important;
+    min-width: 18px !important;
+    max-width: 18px !important;
+    text-align: left !important;
+    flex-shrink: 0 !important;
+    display: inline-block !important;
+    line-height: 1;
+    margin: 2px 0 0 0 !important;
+    padding: 0 !important;
+    vertical-align: top;
+    align-self: flex-start;
+}
+
+.info-item span {
+    text-align: left !important;
+    display: block !important;
+    flex: 1;
+    min-width: 0;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+}
+
+.info-item span strong {
+    text-align: left !important;
+    display: inline !important;
 }
 
 .info-item strong {
     color: #2d3748;
     margin-right: 5px;
+    text-align: left !important;
+    display: inline;
 }
 
 .work-order-description {
@@ -193,6 +256,14 @@
     color: #718096;
     font-size: 0.9rem;
     line-height: 1.6;
+    text-align: left !important;
+    width: 100%;
+}
+
+.work-order-description p {
+    text-align: left !important;
+    margin: 0;
+    width: 100%;
 }
 
 .work-order-actions {

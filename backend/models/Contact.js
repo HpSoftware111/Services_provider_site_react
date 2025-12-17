@@ -18,6 +18,10 @@ const Contact = sequelize.define('Contact', {
       isEmail: true
     }
   },
+  phone: {
+    type: DataTypes.STRING(20),
+    allowNull: true
+  },
   subject: {
     type: DataTypes.STRING(200),
     allowNull: false
@@ -25,6 +29,10 @@ const Contact = sequelize.define('Contact', {
   message: {
     type: DataTypes.TEXT,
     allowNull: false
+  },
+  businessId: {
+    type: DataTypes.INTEGER,
+    allowNull: true
   },
   status: {
     type: DataTypes.ENUM('new', 'read', 'replied', 'resolved'),

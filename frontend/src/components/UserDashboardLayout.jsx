@@ -129,6 +129,7 @@ const UserDashboardLayout = ({ children }) => {
   const providerItems = [
     { path: '/user-dashboard/leads', icon: 'fa-bullhorn', label: 'My Leads' },
     { path: '/user-dashboard/work-orders', icon: 'fa-tasks', label: 'Work Orders' },
+    { path: '/user-dashboard/messages', icon: 'fa-envelope', label: 'Messages' },
     { path: '/user-dashboard/payouts', icon: 'fa-money-bill-wave', label: 'My Payouts' },
     { path: '/user-dashboard/subscriptions', icon: 'fa-crown', label: 'Subscriptions' }
   ];

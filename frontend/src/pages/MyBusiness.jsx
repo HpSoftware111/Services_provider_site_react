@@ -79,13 +79,28 @@ const MyBusiness = () => {
     );
   }
 
+  // Check if any business is not verified
+  const hasUnverifiedBusiness = businesses.length > 0 && businesses.some(business => !business.isVerified);
+
   return (
     <div className="my-business-page">
       <div className="page-header-section">
         <h1 className="page-title">My Businesses</h1>
-        <button className="add-business-btn" onClick={() => navigate('/add-business')}>
-          <i className="fas fa-plus"></i> Add Your Business for FREE
-        </button>
+        <div className="header-actions">
+          {businesses.length > 0 && (
+            <button 
+              className="subscription-btn" 
+              onClick={() => navigate('/user-dashboard/subscriptions')}
+            >
+              <i className="fas fa-crown"></i> Subscription Plans
+            </button>
+          )}
+          {businesses.length === 0 && (
+            <button className="add-business-btn" onClick={() => navigate('/add-business')}>
+              <i className="fas fa-plus"></i> Add Your Business for FREE
+            </button>
+          )}
+        </div>
       </div>
 
       {message.text && (
@@ -98,8 +113,8 @@ const MyBusiness = () => {
         </div>
       )}
 
-      {/* Show verification message if any business is not verified */}
-      {businesses.length > 0 && businesses.some(business => !business.isVerified || !business.isActive || !business.approvedAt) && (
+      {/* Show verification message only if business is NOT verified */}
+      {hasUnverifiedBusiness && (
         <div style={{
           background: '#f0f9ff',
           border: '1px solid #bae6fd',
