@@ -31,14 +31,20 @@ const BusinessInformation = () => {
     hours: {},
     socialMedia: [],
     tags: [],
-    isPublic: true
+    isPublic: true,
+    logo: ''
   });
-  const [categories, setCategories] = useState([]);
-  const [subCategories, setSubCategories] = useState([]);
+  const [categoriesWithServices, setCategoriesWithServices] = useState([]);
+  const [selectedItems, setSelectedItems] = useState([]); // Array of { type: 'category' | 'service', id, name, categoryId? }
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [highlightedIndex, setHighlightedIndex] = useState(-1);
   const [newSocialPlatform, setNewSocialPlatform] = useState('');
   const [newSocialUrl, setNewSocialUrl] = useState('');
   const [newTag, setNewTag] = useState('');
   const [uploadingLogo, setUploadingLogo] = useState(false);
+  const dropdownRef = useRef(null);
+  const categoriesServicesInputRef = useRef(null);
 
   const socialPlatforms = [
     { value: 'facebook', label: 'Facebook' },
@@ -55,6 +61,20 @@ const BusinessInformation = () => {
   useEffect(() => {
     fetchData();
   }, [businessIdParam]);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+        setIsDropdownOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
 
   // Scroll error into view when it appears
   useEffect(() => {
@@ -92,14 +112,66 @@ const BusinessInformation = () => {
         selectedBusiness = allBusinesses[0];
       }
 
-      const [categoriesRes] = await Promise.all([
-        api.get('/categories')
-      ]);
+      const categoriesRes = await api.get('/categories');
+      const categories = categoriesRes.data.categories || [];
       
-      setCategories(categoriesRes.data.categories || []);
+      // Fetch subcategories for all categories
+      const categoriesWithSubs = await Promise.all(
+        categories.map(async (category) => {
+          try {
+            const subRes = await api.get(`/subcategories?categoryId=${category.id}`);
+            return {
+              ...category,
+              subcategories: subRes.data.subcategories || []
+            };
+          } catch (error) {
+            return {
+              ...category,
+              subcategories: []
+            };
+          }
+        })
+      );
+
+      setCategoriesWithServices(categoriesWithSubs);
 
       if (selectedBusiness) {
         setBusiness(selectedBusiness);
+        
+        // Initialize selected items from business data (only services, not categories)
+        const selected = [];
+        
+        // Add services if exists - handle both array and JSON string
+        let bizServices = selectedBusiness.services || [];
+        if (typeof bizServices === 'string') {
+          try {
+            bizServices = JSON.parse(bizServices);
+          } catch (e) {
+            console.error('Error parsing services JSON:', e);
+            bizServices = [];
+          }
+        }
+        if (Array.isArray(bizServices) && bizServices.length > 0) {
+          bizServices.forEach(serviceName => {
+            // Find which category this service belongs to
+            for (const cat of categoriesWithSubs) {
+              const service = cat.subcategories.find(sub => sub.name === serviceName);
+              if (service) {
+                selected.push({
+                  type: 'service',
+                  id: service.id,
+                  name: service.name,
+                  categoryId: cat.id,
+                  categoryName: cat.name
+                });
+                break;
+              }
+            }
+          });
+        }
+        
+        setSelectedItems(selected);
+        
         setFormData({
           name: selectedBusiness.name || '',
           description: selectedBusiness.description || '',
@@ -121,27 +193,12 @@ const BusinessInformation = () => {
           isPublic: selectedBusiness.isPublic !== undefined ? selectedBusiness.isPublic : true,
           logo: selectedBusiness.logo || ''
         });
-
-        // Fetch subcategories if category is selected
-        if (selectedBusiness.categoryId) {
-          fetchSubCategories(selectedBusiness.categoryId);
-        }
       }
-      setCategories(categoriesRes.data.categories || []);
     } catch (error) {
       console.error('Error fetching data:', error);
+      setMessage({ type: 'error', text: 'Failed to load data' });
     } finally {
       setLoading(false);
-    }
-  };
-
-  const fetchSubCategories = async (categoryId) => {
-    try {
-      const response = await api.get(`/subcategories?categoryId=${categoryId}`);
-      setSubCategories(response.data.subcategories || []);
-    } catch (error) {
-      console.error('Error fetching subcategories:', error);
-      setSubCategories([]);
     }
   };
 
@@ -154,6 +211,41 @@ const BusinessInformation = () => {
       const selectedBusiness = businessRes.data.business;
       
       setBusiness(selectedBusiness);
+      
+      // Initialize selected items from business data (only services, not categories)
+      const selected = [];
+      
+      // Add services if exists - handle both array and JSON string
+      let bizServices = selectedBusiness.services || [];
+      if (typeof bizServices === 'string') {
+        try {
+          bizServices = JSON.parse(bizServices);
+        } catch (e) {
+          console.error('Error parsing services JSON:', e);
+          bizServices = [];
+        }
+      }
+      if (Array.isArray(bizServices) && bizServices.length > 0 && categoriesWithServices.length > 0) {
+        bizServices.forEach(serviceName => {
+          // Find which category this service belongs to
+          for (const cat of categoriesWithServices) {
+            const service = cat.subcategories.find(sub => sub.name === serviceName);
+            if (service) {
+              selected.push({
+                type: 'service',
+                id: service.id,
+                name: service.name,
+                categoryId: cat.id,
+                categoryName: cat.name
+              });
+              break;
+            }
+          }
+        });
+      }
+      
+      setSelectedItems(selected);
+      
       setFormData({
         name: selectedBusiness.name || '',
         description: selectedBusiness.description || '',
@@ -175,13 +267,9 @@ const BusinessInformation = () => {
         isPublic: selectedBusiness.isPublic !== undefined ? selectedBusiness.isPublic : true,
         logo: selectedBusiness.logo || ''
       });
-
-      // Fetch subcategories if category is selected
-      if (selectedBusiness.categoryId) {
-        fetchSubCategories(selectedBusiness.categoryId);
-      }
     } catch (error) {
       console.error('Error fetching business:', error);
+      setMessage({ type: 'error', text: 'Failed to load business data' });
     } finally {
       setLoading(false);
     }
@@ -190,11 +278,152 @@ const BusinessInformation = () => {
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
+  };
+
+  // Build grouped list of categories with their services for display
+  const getGroupedItems = () => {
+    return categoriesWithServices.map(category => ({
+      category: {
+        id: category.id,
+        name: category.name,
+        icon: category.icon,
+        description: category.description
+      },
+      services: category.subcategories.map(service => ({
+        type: 'service',
+        id: service.id,
+        name: service.name,
+        description: service.description,
+        categoryId: category.id,
+        categoryName: category.name
+      }))
+    }));
+  };
+
+  // Build flat list of all selectable items (only services, not categories)
+  const getAllSelectableItems = () => {
+    const items = [];
+    categoriesWithServices.forEach(category => {
+      // Only add services under this category (no categories as selectable items)
+      category.subcategories.forEach(service => {
+        items.push({
+          type: 'service',
+          id: service.id,
+          name: service.name,
+          description: service.description,
+          categoryId: category.id,
+          categoryName: category.name
+        });
+      });
+    });
+    return items;
+  };
+
+  // Get filtered and grouped items for display
+  const getFilteredGroupedItems = () => {
+    const grouped = getGroupedItems();
+    const searchLower = searchQuery.toLowerCase();
     
-    if (name === 'categoryId') {
-      fetchSubCategories(value);
-      setFormData(prev => ({ ...prev, subCategoryId: '' }));
+    return grouped.map(group => {
+      // Filter services in this group
+      const filteredServices = group.services.filter(service => {
+        const matchesSearch = !searchQuery || 
+          service.name.toLowerCase().includes(searchLower) ||
+          (service.description && service.description.toLowerCase().includes(searchLower));
+        
+        const isSelected = selectedItems.some(selected => 
+          selected.type === service.type && selected.id === service.id
+        );
+        
+        return matchesSearch && !isSelected;
+      });
+      
+      // Only include category if it has matching services or search matches category name
+      const categoryMatches = !searchQuery || 
+        group.category.name.toLowerCase().includes(searchLower);
+      
+      if (filteredServices.length > 0 || categoryMatches) {
+        return {
+          ...group,
+          services: filteredServices
+        };
+      }
+      return null;
+    }).filter(group => group !== null && group.services.length > 0);
+  };
+
+  const filteredItems = getAllSelectableItems().filter(item => {
+    // Filter by search query
+    const matchesSearch = item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (item.description && item.description.toLowerCase().includes(searchQuery.toLowerCase()));
+    
+    // Filter out already selected items
+    const isSelected = selectedItems.some(selected => 
+      selected.type === item.type && selected.id === item.id
+    );
+    
+    return matchesSearch && !isSelected;
+  });
+
+  const handleItemSelect = (item) => {
+     if (selectedItems.length >= 20) {
+       setMessage({ type: 'error', text: 'Maximum 20 services allowed' });
+       return;
+     }
+    
+    // Check for duplicates
+    const isDuplicate = selectedItems.some(selected => 
+      selected.type === item.type && selected.id === item.id
+    );
+
+    if (!isDuplicate) {
+      setSelectedItems([...selectedItems, item]);
+      setSearchQuery('');
+      setIsDropdownOpen(false);
+      setHighlightedIndex(-1);
     }
+  };
+
+  const handleRemoveItem = (index) => {
+    setSelectedItems(selectedItems.filter((_, i) => i !== index));
+  };
+
+  const handleKeyDown = (e) => {
+    if (!isDropdownOpen && e.key === 'Enter') {
+      setIsDropdownOpen(true);
+      return;
+    }
+
+    if (!isDropdownOpen) return;
+
+    switch (e.key) {
+      case 'ArrowDown':
+        e.preventDefault();
+        setHighlightedIndex(prev => 
+          prev < filteredItems.length - 1 ? prev + 1 : prev
+        );
+        break;
+      case 'ArrowUp':
+        e.preventDefault();
+        setHighlightedIndex(prev => prev > 0 ? prev - 1 : -1);
+        break;
+      case 'Enter':
+        e.preventDefault();
+        if (highlightedIndex >= 0 && filteredItems[highlightedIndex]) {
+          handleItemSelect(filteredItems[highlightedIndex]);
+        }
+        break;
+      case 'Escape':
+        setIsDropdownOpen(false);
+        setHighlightedIndex(-1);
+        break;
+      default:
+        break;
+    }
+  };
+
+  const getItemDisplayName = (item) => {
+    return item.name;
   };
 
   const handleHoursChange = (day, field, value) => {
@@ -308,6 +537,17 @@ const BusinessInformation = () => {
         }
       });
 
+      // Get services (categories are not selectable)
+      const selectedServices = selectedItems.filter(item => item.type === 'service');
+      
+      // Get primary category from first service's category or existing business category
+      const primaryCategoryId = selectedServices.length > 0 
+        ? selectedServices[0].categoryId 
+        : (business.categoryId || null);
+      
+      // Convert services to array of strings for backend
+      const servicesToSave = selectedServices.map(item => item.name);
+
       // Prepare submit data - only send fields that exist in the model
       const submitData = {
         name: formData.name.trim(),
@@ -317,9 +557,16 @@ const BusinessInformation = () => {
         address: formData.address.trim(),
         city: formData.city.trim(),
         state: formData.state.trim().toUpperCase(),
-        country: formData.country || 'USA',
-        categoryId: parseInt(formData.categoryId)
+        country: formData.country || 'USA'
       };
+
+      // Add category if available
+      if (primaryCategoryId) {
+        submitData.categoryId = parseInt(primaryCategoryId);
+      }
+
+      // Add services (always include, even if empty array to clear existing)
+      submitData.services = servicesToSave;
 
       // Add optional fields only if they have values
       if (formData.website && formData.website.trim()) {
@@ -348,6 +595,46 @@ const BusinessInformation = () => {
       }
 
       await api.put(`/businesses/${business.id}`, submitData);
+      
+      // Refresh business data to get updated services
+      const businessRes = await api.get(`/businesses/${business.id}`);
+      const updatedBusiness = businessRes.data.business;
+      setBusiness(updatedBusiness);
+      
+      // Re-initialize selected items from updated business data (only services)
+      const selected = [];
+      
+      // Add services if exists - handle both array and JSON string
+      let bizServices = updatedBusiness.services || [];
+      if (typeof bizServices === 'string') {
+        try {
+          bizServices = JSON.parse(bizServices);
+        } catch (e) {
+          console.error('Error parsing services JSON:', e);
+          bizServices = [];
+        }
+      }
+      if (Array.isArray(bizServices) && bizServices.length > 0 && categoriesWithServices.length > 0) {
+        bizServices.forEach(serviceName => {
+          // Find which category this service belongs to
+          for (const cat of categoriesWithServices) {
+            const service = cat.subcategories.find(sub => sub.name === serviceName);
+            if (service) {
+              selected.push({
+                type: 'service',
+                id: service.id,
+                name: service.name,
+                categoryId: cat.id,
+                categoryName: cat.name
+              });
+              break;
+            }
+          }
+        });
+      }
+      
+      setSelectedItems(selected);
+      
       setMessage({ type: 'success', text: 'Business information updated successfully!' });
       setTimeout(() => setMessage({ type: '', text: '' }), 3000);
     } catch (error) {
@@ -458,33 +745,133 @@ const BusinessInformation = () => {
                 placeholder="Enter business name"
               />
             </div>
-            <div className="form-field">
-              <label>Category *</label>
-              <select
-                name="categoryId"
-                value={formData.categoryId}
-                onChange={handleChange}
-                required
-              >
-                <option value="">Select category</option>
-                {categories.map(cat => (
-                  <option key={cat.id} value={cat.id}>{cat.name}</option>
-                ))}
-              </select>
-            </div>
-            <div className="form-field">
-              <label>Sub Category</label>
-              <select
-                name="subCategoryId"
-                value={formData.subCategoryId}
-                onChange={handleChange}
-                disabled={!formData.categoryId}
-              >
-                <option value="">Select sub category</option>
-                {subCategories.map(subCat => (
-                  <option key={subCat.id} value={subCat.id}>{subCat.name}</option>
-                ))}
-              </select>
+            <div className="form-field full-width">
+              <label>Categories & Services *</label>
+               <p style={{ fontSize: '12px', color: '#7f8c8d', margin: '0 0 12px 0' }}>
+                 Search and select services your business offers
+               </p>
+
+               {/* Selected Services Tags */}
+               {selectedItems.length > 0 && (
+                 <div className="selected-services-tags" style={{ marginBottom: '12px' }}>
+                   {selectedItems.map((item, index) => (
+                     <div key={`${item.type}-${item.id}`} className="service-tag tag-service">
+                       <i className="fas fa-tag"></i>
+                       <span>{getItemDisplayName(item)}</span>
+                       {item.categoryName && (
+                         <span className="tag-category-badge">{item.categoryName}</span>
+                       )}
+                       <button
+                         type="button"
+                         onClick={() => handleRemoveItem(index)}
+                         className="tag-remove-btn"
+                         title="Remove"
+                       >
+                         <i className="fas fa-times"></i>
+                       </button>
+                     </div>
+                   ))}
+                 </div>
+               )}
+
+              {/* Multi-Select Dropdown */}
+              <div className="multi-select-container" ref={dropdownRef}>
+                <div className="multi-select-input-wrapper">
+                  <input
+                    ref={categoriesServicesInputRef}
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => {
+                      setSearchQuery(e.target.value);
+                      setIsDropdownOpen(true);
+                      setHighlightedIndex(-1);
+                    }}
+                    onFocus={() => setIsDropdownOpen(true)}
+                    onKeyDown={handleKeyDown}
+                     placeholder={selectedItems.length >= 20 ? "Maximum 20 services reached" : "Search services..."}
+                    className="multi-select-input"
+                    disabled={selectedItems.length >= 20}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+                    className="dropdown-toggle"
+                    disabled={selectedItems.length >= 20}
+                  >
+                    <i className={`fas fa-chevron-${isDropdownOpen ? 'up' : 'down'}`}></i>
+                  </button>
+                </div>
+
+                 {isDropdownOpen && getFilteredGroupedItems().length > 0 && (
+                   <div className="multi-select-dropdown">
+                     {getFilteredGroupedItems().map((group, groupIndex) => {
+                       let serviceIndex = 0;
+                       // Calculate starting index for services in this group
+                       const startIndex = getFilteredGroupedItems()
+                         .slice(0, groupIndex)
+                         .reduce((sum, g) => sum + g.services.length, 0);
+                       
+                       return (
+                         <div key={`category-${group.category.id}`} className="dropdown-group">
+                           {/* Category Header - Non-selectable */}
+                           <div className="dropdown-category-header">
+                             {group.category.icon && <i className={`fas fa-${group.category.icon}`}></i>}
+                             <span className="category-header-name">{group.category.name}</span>
+                           </div>
+                           
+                           {/* Services under this category */}
+                           {group.services.map((service) => {
+                             const currentIndex = startIndex + serviceIndex++;
+                             return (
+                               <div
+                                 key={`service-${service.id}`}
+                                 className={`dropdown-option ${currentIndex === highlightedIndex ? 'highlighted' : ''} option-service`}
+                                 onClick={() => handleItemSelect(service)}
+                                 onMouseEnter={() => setHighlightedIndex(currentIndex)}
+                               >
+                                 <div className="option-header">
+                                   <i className="fas fa-tag"></i>
+                                   <span className="option-name">{service.name}</span>
+                                 </div>
+                                 {service.description && (
+                                   <span className="option-description">{service.description}</span>
+                                 )}
+                               </div>
+                             );
+                           })}
+                         </div>
+                       );
+                     })}
+                   </div>
+                 )}
+
+                 {isDropdownOpen && searchQuery && getFilteredGroupedItems().length === 0 && (
+                   <div className="multi-select-dropdown">
+                     <div className="dropdown-empty">
+                       <i className="fas fa-search"></i>
+                       <p>No services found matching "{searchQuery}"</p>
+                     </div>
+                   </div>
+                 )}
+
+                 {isDropdownOpen && !searchQuery && getFilteredGroupedItems().length === 0 && getAllSelectableItems().length > 0 && (
+                   <div className="multi-select-dropdown">
+                     <div className="dropdown-empty">
+                       <i className="fas fa-check-circle"></i>
+                       <p>All available services have been selected</p>
+                     </div>
+                   </div>
+                 )}
+
+                 {isDropdownOpen && getAllSelectableItems().length === 0 && (
+                   <div className="multi-select-dropdown">
+                     <div className="dropdown-empty">
+                       <i className="fas fa-info-circle"></i>
+                       <p>No services available</p>
+                     </div>
+                   </div>
+                 )}
+              </div>
             </div>
             <div className="form-field full-width">
               <label>Description *</label>

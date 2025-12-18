@@ -262,6 +262,13 @@ const UserDashboardLayout = ({ children }) => {
             <button
               onClick={async () => {
                 setMobileMenuOpen(false);
+                // If user is a customer, navigate to home page
+                if (!isProvider) {
+                  window.open('/', '_blank');
+                  return;
+                }
+
+                // If user is a provider/business owner, navigate to business profile
                 try {
                   // Get user's businesses if not already loaded
                   let businesses = userBusinesses;
@@ -294,10 +301,10 @@ const UserDashboardLayout = ({ children }) => {
                 }
               }}
               className="nav-item view-customer-btn"
-              title="View your business profile"
+              title={isProvider ? "View your business profile" : "View home page"}
             >
               <i className="fas fa-external-link-alt"></i>
-              <span>View Business Profile</span>
+              <span>{isProvider ? 'View Business Profile' : 'View Home Page'}</span>
             </button>
             <button
               onClick={() => {

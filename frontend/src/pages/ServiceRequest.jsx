@@ -68,7 +68,7 @@ const ServiceRequest = () => {
         // NOT to customers submitting service requests.
         // For customer-facing ServiceRequest page we treat usage as unlimited.
         setMonthlyUsage(null);
-            setUsageLoading(false);
+        setUsageLoading(false);
     };
 
     // Check if a given phone number is already verified for the current user
@@ -137,10 +137,20 @@ const ServiceRequest = () => {
         if (currentStep === 3 && formData.zipCode && formData.zipCode.length >= 5 && formData.categoryId) {
             loadBusinessesByZipCode();
         } else if (currentStep === 3 && (!formData.categoryId || !formData.zipCode || formData.zipCode.length < 5)) {
-            // Clear businesses if category or zip code is missing
+            // Clear businesses and selected businesses if category or zip code is missing
             setBusinesses([]);
+            setSelectedBusinesses([]);
         }
     }, [currentStep, formData.zipCode, formData.categoryId, formData.subCategoryId]);
+
+    // Ensure all businesses remain selected whenever businesses list changes
+    useEffect(() => {
+        if (currentStep === 3 && businesses.length > 0) {
+            const allBusinessIds = businesses.map(b => b.id);
+            // Always ensure all businesses are selected
+            setSelectedBusinesses(allBusinessIds);
+        }
+    }, [businesses, currentStep]);
 
     const loadCategories = async () => {
         try {
@@ -169,25 +179,48 @@ const ServiceRequest = () => {
             return;
         }
 
-        // Note: subcategory is optional - if selected, we'll filter by it
-
         setLoadingBusinesses(true);
         try {
-            // Filter businesses by zip code, category, and subcategory (if selected)
+            // Filter businesses by zip code and category
             const categoryId = parseInt(formData.categoryId);
-            let apiUrl = `/businesses?zipCode=${formData.zipCode}&categoryId=${categoryId}&limit=20`;
+            // Backend expects 'category' or 'categories' parameter, not 'categoryId'
+            let apiUrl = `/businesses?zipCode=${formData.zipCode}&category=${categoryId}&limit=50`;
 
-            // Add subcategory filter if it's selected
-            if (formData.subCategoryId) {
-                const subCategoryId = parseInt(formData.subCategoryId);
-                apiUrl += `&subCategory=${subCategoryId}`;
-            }
+            console.log('Loading businesses with:', {
+                zipCode: formData.zipCode,
+                categoryId: categoryId,
+                subCategoryId: formData.subCategoryId,
+                apiUrl: apiUrl
+            });
 
             const response = await api.get(apiUrl);
 
+            console.log('Businesses API response:', {
+                total: response.data?.total || 0,
+                count: response.data?.count || 0,
+                businessesCount: response.data?.businesses?.length || 0,
+                sampleBusiness: response.data?.businesses?.[0] ? {
+                    id: response.data.businesses[0].id,
+                    name: response.data.businesses[0].name,
+                    categoryId: response.data.businesses[0].categoryId,
+                    zipCode: response.data.businesses[0].zipCode,
+                    services: response.data.businesses[0].services
+                } : null
+            });
+
+            // Get subcategory name if subcategory is selected (for service matching)
+            let selectedServiceName = null;
+            if (formData.subCategoryId) {
+                const subCategoryId = parseInt(formData.subCategoryId);
+                const selectedSubCategory = subCategories.find(sub => sub.id === subCategoryId);
+                if (selectedSubCategory) {
+                    selectedServiceName = selectedSubCategory.name;
+                }
+            }
+
             // Additional client-side filtering to ensure all businesses match:
             // 1. Category must match
-            // 2. Subcategory must match (if subcategory was selected)
+            // 2. Service must match (if subcategory/service was selected) - check services array
             // 3. Zip code must match
             let filteredBusinesses = (response.data.businesses || []).filter(business => {
                 // Check category match
@@ -195,26 +228,69 @@ const ServiceRequest = () => {
                     return false;
                 }
 
-                // Check subcategory match (if subcategory was selected)
-                if (formData.subCategoryId) {
-                    const subCategoryId = parseInt(formData.subCategoryId);
-                    if (business.subCategoryId !== subCategoryId) {
-                        return false;
-                    }
-                }
-
                 // Check zip code match
                 if (business.zipCode !== formData.zipCode) {
                     return false;
                 }
 
+                // Check service match (if subcategory/service was selected)
+                // Business services are stored as an array of service names
+                if (selectedServiceName) {
+                    let businessServices = business.services || [];
+
+                    // Handle JSON string format
+                    if (typeof businessServices === 'string') {
+                        try {
+                            businessServices = JSON.parse(businessServices);
+                        } catch (e) {
+                            console.error('Error parsing business services:', e);
+                            businessServices = [];
+                        }
+                    }
+
+                    // Ensure it's an array
+                    if (!Array.isArray(businessServices)) {
+                        businessServices = [];
+                    }
+
+                    // Check if the selected service name is in the business's services array
+                    // Use case-insensitive matching and trim whitespace
+                    const hasService = businessServices.some(service => {
+                        if (!service) return false;
+                        const serviceName = typeof service === 'string' ? service : service.name || '';
+                        return serviceName.toLowerCase().trim() === selectedServiceName.toLowerCase().trim();
+                    });
+
+                    // If service is selected but business doesn't have it, exclude this business
+                    if (!hasService) {
+                        return false;
+                    }
+                }
+                // If no service is selected, include all businesses in this category (no filtering by services)
+
                 return true;
             });
 
+            console.log('Filtered businesses:', {
+                beforeFilter: response.data?.businesses?.length || 0,
+                afterFilter: filteredBusinesses.length,
+                selectedServiceName: selectedServiceName || 'none',
+                filteredBusinessIds: filteredBusinesses.map(b => b.id)
+            });
+
             setBusinesses(filteredBusinesses);
+
+            // Auto-select all businesses when loaded - always select all
+            if (filteredBusinesses.length > 0) {
+                const allBusinessIds = filteredBusinesses.map(b => b.id);
+                setSelectedBusinesses(allBusinessIds);
+            } else {
+                setSelectedBusinesses([]);
+            }
         } catch (error) {
             console.error('Error loading businesses:', error);
             setBusinesses([]);
+            setSelectedBusinesses([]);
         } finally {
             setLoadingBusinesses(false);
         }
@@ -469,7 +545,12 @@ const ServiceRequest = () => {
                 }
                 break;
             case 2:
-                // Subcategory is optional, no validation needed
+                // Subcategory is required if subcategories are available
+                if (subCategories.length > 0) {
+                    if (!formData.subCategoryId || formData.subCategoryId === '') {
+                        errors.subCategoryId = 'Please select a sub-service';
+                    }
+                }
                 break;
             case 3:
                 if (!formData.zipCode || formData.zipCode.trim() === '') {
@@ -479,11 +560,13 @@ const ServiceRequest = () => {
                 } else if (!/^\d{5}(-\d{4})?$/.test(formData.zipCode.trim())) {
                     errors.zipCode = 'Please enter a valid zip code (e.g., 12345 or 12345-6789)';
                 }
-                // Validate business selection - require at least one business if businesses are available and loaded
+                // Validate business selection - businesses are auto-selected, so just check if any exist
                 // Only validate if zip code is valid and businesses have finished loading
                 if (!errors.zipCode && formData.zipCode && formData.zipCode.length >= 5 && formData.categoryId) {
-                    if (!loadingBusinesses && businesses.length > 0 && selectedBusinesses.length === 0) {
-                        errors.selectedBusinesses = 'Please select at least one business to proceed';
+                    if (!loadingBusinesses && businesses.length === 0) {
+                        errors.selectedBusinesses = 'No businesses found for this zip code. Please try a different zip code.';
+                    } else if (!loadingBusinesses && businesses.length > 0 && selectedBusinesses.length === 0) {
+                        errors.selectedBusinesses = 'No businesses available for this zip code';
                     }
                 }
                 break;
@@ -717,10 +800,10 @@ const ServiceRequest = () => {
                 navigate('/user-dashboard');
             }, 2000);
         } catch (error) {
-                setMessage({
-                    type: 'error',
-                    text: error.response?.data?.error || 'Failed to submit service request'
-                });
+            setMessage({
+                type: 'error',
+                text: error.response?.data?.error || 'Failed to submit service request'
+            });
         } finally {
             setLoading(false);
         }
@@ -801,27 +884,37 @@ const ServiceRequest = () => {
                 return (
                     <div className="step-content">
                         <h2>Select Sub-Service</h2>
-                        <p className="step-description">Choose the specific sub-service (optional)</p>
+                        <p className="step-description">Choose the specific sub-service *</p>
                         {subCategories.length > 0 ? (
                             <div className="form-group">
-                                <label>Sub-Service (Optional)</label>
-                                <div className="subcategory-grid">
-                                    <div
-                                        className={`subcategory-option ${formData.subCategoryId === '' ? 'selected' : ''}`}
-                                        onClick={() => setFormData(prev => ({ ...prev, subCategoryId: '' }))}
-                                    >
-                                        <span>None / Skip</span>
-                                    </div>
+                                <label>Sub-Service <span className="required">*</span></label>
+                                <div className={`subcategory-grid ${stepErrors.subCategoryId ? 'has-error' : ''}`}>
                                     {subCategories.map((subCategory) => (
                                         <div
                                             key={subCategory.id}
                                             className={`subcategory-option ${formData.subCategoryId === subCategory.id.toString() ? 'selected' : ''}`}
-                                            onClick={() => setFormData(prev => ({ ...prev, subCategoryId: subCategory.id.toString() }))}
+                                            onClick={() => {
+                                                setFormData(prev => ({ ...prev, subCategoryId: subCategory.id.toString() }));
+                                                // Clear error when user selects a sub-service
+                                                if (stepErrors.subCategoryId) {
+                                                    setStepErrors(prev => {
+                                                        const newErrors = { ...prev };
+                                                        delete newErrors.subCategoryId;
+                                                        return newErrors;
+                                                    });
+                                                }
+                                            }}
                                         >
                                             <span>{subCategory.name}</span>
                                         </div>
                                     ))}
                                 </div>
+                                {stepErrors.subCategoryId && (
+                                    <div className="field-error">
+                                        <i className="fas fa-exclamation-circle"></i>
+                                        <span>{stepErrors.subCategoryId}</span>
+                                    </div>
+                                )}
                             </div>
                         ) : (
                             <div className="no-subcategories">
@@ -875,26 +968,21 @@ const ServiceRequest = () => {
                         </div>
                         {formData.zipCode && formData.zipCode.length >= 5 && formData.categoryId ? (
                             <div className="businesses-section">
-                                <h3>
-                                    Available {categories.find(c => c.id === parseInt(formData.categoryId))?.name || 'Service'}
-                                    {formData.subCategoryId && subCategories.find(s => s.id === parseInt(formData.subCategoryId)) && (
-                                        <> - {subCategories.find(s => s.id === parseInt(formData.subCategoryId))?.name}</>
-                                    )} Businesses in {formData.zipCode}
-                                </h3>
+                                {/* Display available businesses for selection */}
                                 {loadingBusinesses ? (
                                     <div className="loading-businesses">
                                         <i className="fas fa-spinner fa-spin"></i> Loading businesses...
                                     </div>
                                 ) : businesses.length > 0 ? (
                                     <>
-                                        <div className={`business-selection-hint ${stepErrors.selectedBusinesses ? 'has-error' : ''}`}>
+                                        {/* <div className={`business-selection-hint ${stepErrors.selectedBusinesses ? 'has-error' : ''}`}>
                                             <i className={`fas fa-${stepErrors.selectedBusinesses ? 'exclamation-circle' : 'info-circle'}`}></i>
                                             <span>
                                                 {stepErrors.selectedBusinesses
                                                     ? stepErrors.selectedBusinesses
                                                     : 'Select at least one business you\'d like to contact *'}
                                             </span>
-                                        </div>
+                                        </div> */}
                                         {stepErrors.selectedBusinesses && (
                                             <div className="field-error" style={{ marginTop: '8px', marginBottom: '16px' }}>
                                                 <i className="fas fa-exclamation-circle"></i>
@@ -911,25 +999,11 @@ const ServiceRequest = () => {
                                                     >
                                                         <div
                                                             className="business-card-content"
-                                                            onClick={() => {
-                                                                if (isSelected) {
-                                                                    setSelectedBusinesses(prev => prev.filter(id => id !== business.id));
-                                                                } else {
-                                                                    setSelectedBusinesses(prev => [...prev, business.id]);
-                                                                }
-                                                                // Clear error when user selects a business
-                                                                if (stepErrors.selectedBusinesses) {
-                                                                    setStepErrors(prev => {
-                                                                        const newErrors = { ...prev };
-                                                                        delete newErrors.selectedBusinesses;
-                                                                        return newErrors;
-                                                                    });
-                                                                }
-                                                            }}
+                                                        // Removed onClick handler - all businesses are always selected
                                                         >
-                                                            <div className="business-card-checkbox">
+                                                            {/* <div className="business-card-checkbox">
                                                                 <i className={`fas fa-${isSelected ? 'check-circle' : 'circle'}`}></i>
-                                                            </div>
+                                                            </div> */}
                                                             <div className="business-card-header">
                                                                 <h4>{business.name}</h4>
                                                                 {business.ratingAverage > 0 && (
@@ -962,7 +1036,7 @@ const ServiceRequest = () => {
                                         {selectedBusinesses.length > 0 && (
                                             <div className="selected-businesses-count">
                                                 <i className="fas fa-check"></i>
-                                                <span>{selectedBusinesses.length} business{selectedBusinesses.length !== 1 ? 'es' : ''} selected</span>
+                                                <span>{selectedBusinesses.length} business{selectedBusinesses.length !== 1 ? 'es' : ''} searched</span>
                                             </div>
                                         )}
                                     </>
@@ -1312,7 +1386,7 @@ const ServiceRequest = () => {
                     ))}
                 </div>
 
-                {message.text && (
+                {/* {message.text && (
                     <div className={`alert alert-${message.type}`}>
                         <i className={`fas fa-${message.type === 'success' ? 'check-circle' : 'exclamation-circle'}`}></i>
                         <span>{message.text}</span>
@@ -1320,7 +1394,7 @@ const ServiceRequest = () => {
                             <i className="fas fa-times"></i>
                         </button>
                     </div>
-                )}
+                )} */}
 
                 <div className="service-request-form wizard-form">
                     {renderStepContent()}
@@ -1527,8 +1601,8 @@ const ServiceRequest = () => {
                                         })()}
                                     </div>
 
-                                    {/* Contact Information */}
-                                    <div className="detail-section">
+                                    {/* Contact Information - Hidden */}
+                                    {/* <div className="detail-section">
                                         <h4>
                                             <i className="fas fa-phone"></i>
                                             Contact Information
@@ -1549,7 +1623,7 @@ const ServiceRequest = () => {
                                                 </p>
                                             )}
                                         </div>
-                                    </div>
+                                    </div> */}
 
                                     {/* Description */}
                                     {selectedBusinessDetail.description && (

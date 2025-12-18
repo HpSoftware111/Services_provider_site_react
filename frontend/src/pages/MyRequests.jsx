@@ -304,7 +304,7 @@ const MyRequests = () => {
 
         try {
             setMessage({ type: '', text: '' });
-            
+
             // Close modal immediately to prevent it from staying open
             setShowConfirmAcceptModal(false);
             setSelectedProposalForAccept(null);
@@ -480,7 +480,7 @@ const MyRequests = () => {
                     type: 'error',
                     text: 'Please provide a description when selecting "Other" as the rejection reason'
                 });
-            return;
+                return;
             }
         }
 
@@ -1060,18 +1060,18 @@ const MyRequests = () => {
                                                     );
 
                                                     return (
-                                                    <div key={index} className="provider-card">
-                                                        <div className="provider-info">
-                                                            <h4>{provider.name}</h4>
+                                                        <div key={index} className="provider-card">
+                                                            <div className="provider-info">
+                                                                <h4>{provider.name}</h4>
                                                                 {/* Only show contact info if provider has an accepted proposal */}
                                                                 {hasAcceptedProposal && provider.email && (
-                                                                <p><i className="fas fa-envelope"></i> {provider.email}</p>
-                                                            )}
+                                                                    <p><i className="fas fa-envelope"></i> {provider.email}</p>
+                                                                )}
                                                                 {hasAcceptedProposal && provider.phone && (
-                                                                <p><i className="fas fa-phone"></i> {provider.phone}</p>
-                                                            )}
+                                                                    <p><i className="fas fa-phone"></i> {provider.phone}</p>
+                                                                )}
+                                                            </div>
                                                         </div>
-                                                    </div>
                                                     );
                                                 })}
                                             </div>
@@ -1227,7 +1227,7 @@ const MyRequests = () => {
                                     )}
 
                                     {/* Payout Information (for approved/completed requests with accepted proposals) */}
-                                    {(selectedRequest.status === 'APPROVED' || selectedRequest.status === 'CLOSED') &&
+                                    {/* {(selectedRequest.status === 'APPROVED' || selectedRequest.status === 'CLOSED') &&
                                         selectedRequest.proposals && selectedRequest.proposals.length > 0 &&
                                         selectedRequest.proposals[0].status === 'ACCEPTED' && (
                                             <div className="detail-section payout-section">
@@ -1272,7 +1272,7 @@ const MyRequests = () => {
                                                     )}
                                                 </div>
                                             </div>
-                                        )}
+                                        )} */}
 
                                     {/* Approved Notice & Review Section */}
                                     {(selectedRequest.status === 'APPROVED' || selectedRequest.status === 'CLOSED') && (
@@ -1588,10 +1588,10 @@ const MyRequests = () => {
                                     Did you discuss with provider about project via phone or email?
                                 </p>
                                 {selectedProposalForAccept.provider && (
-                                    <div style={{ 
-                                        background: '#f0f9ff', 
-                                        padding: '15px', 
-                                        borderRadius: '8px', 
+                                    <div style={{
+                                        background: '#f0f9ff',
+                                        padding: '15px',
+                                        borderRadius: '8px',
                                         marginBottom: '15px',
                                         border: '1px solid #bae6fd'
                                     }}>

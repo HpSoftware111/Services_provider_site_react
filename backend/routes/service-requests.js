@@ -4599,27 +4599,113 @@ router.post('/', protect, async (req, res) => {
                 ? (await SubCategory.findByPk(serviceRequest.subCategoryId))?.name || null
                 : null;
 
-            // Create Lead for primary provider if exists
-            console.log('Checking primary provider for lead creation:', {
-                primaryExists: !!primary,
-                hasBusiness: !!(primary && primary.business),
-                hasOwner: !!(primary && primary.owner),
-                hasProviderProfile: !!(primary && primary.providerProfile),
-                businessId: primary?.business?.id,
-                ownerId: primary?.owner?.id,
-                providerProfileId: primary?.providerProfile?.id
-            });
-
+            // Create Leads for ALL selected businesses (not just primary)
+            // First, get all selected businesses that should receive leads
+            const businessesToCreateLeadsFor = [];
+            
+            // Add primary provider if exists
             if (primary && primary.business && primary.owner) {
+                businessesToCreateLeadsFor.push({
+                    business: primary.business,
+                    owner: primary.owner,
+                    providerProfile: primary.providerProfile,
+                    isPrimary: true
+                });
+            }
+            
+            // Add all alternative providers
+            if (alternatives && alternatives.length > 0) {
+                alternatives.forEach(alt => {
+                    if (alt && alt.business && alt.owner) {
+                        businessesToCreateLeadsFor.push({
+                            business: alt.business,
+                            owner: alt.owner,
+                            providerProfile: alt.providerProfile,
+                            isPrimary: false
+                        });
+                    }
+                });
+            }
+            
+            // Also check if there are selected businesses that weren't in primary/alternatives
+            // This handles cases where businesses were selected but didn't match ranking criteria
+            if (serviceRequest.selectedBusinessIds && Array.isArray(serviceRequest.selectedBusinessIds) && serviceRequest.selectedBusinessIds.length > 0) {
+                const selectedBusinessIds = serviceRequest.selectedBusinessIds;
+                const existingBusinessIds = businessesToCreateLeadsFor.map(b => b.business.id);
+                const missingBusinessIds = selectedBusinessIds.filter(id => !existingBusinessIds.includes(id));
+                
+                if (missingBusinessIds.length > 0) {
+                    console.log(`[Lead Creation] Found ${missingBusinessIds.length} selected businesses not in primary/alternatives, fetching them...`);
+                    const missingBusinesses = await Business.findAll({
+                        where: {
+                            id: { [Op.in]: missingBusinessIds },
+                            ownerId: { 
+                                [Op.and]: [
+                                    { [Op.ne]: null },
+                                    { [Op.ne]: serviceRequest.customerId } // Exclude customer's own businesses
+                                ]
+                            }
+                        },
+                        include: [
+                            {
+                                model: User,
+                                as: 'owner',
+                                attributes: ['id', 'name', 'email', 'firstName', 'lastName', 'phone'],
+                                required: true
+                            }
+                        ]
+                    });
+                    
+                    for (const business of missingBusinesses) {
+                        if (business.owner && business.owner.id !== serviceRequest.customerId) {
+                            // Find or create provider profile
+                            let providerProfile = await ProviderProfile.findOne({
+                                where: { userId: business.owner.id },
+                                attributes: ['id', 'userId']
+                            });
+                            
+                            if (!providerProfile) {
+                                try {
+                                    providerProfile = await ProviderProfile.create({
+                                        userId: business.owner.id
+                                    }, {
+                                        fields: ['userId']
+                                    });
+                                } catch (createError) {
+                                    providerProfile = await ProviderProfile.findOne({
+                                        where: { userId: business.owner.id },
+                                        attributes: ['id', 'userId']
+                                    });
+                                }
+                            }
+                            
+                            if (providerProfile) {
+                                businessesToCreateLeadsFor.push({
+                                    business: business,
+                                    owner: business.owner,
+                                    providerProfile: providerProfile,
+                                    isPrimary: false
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+            
+            console.log(`[Lead Creation] Creating leads for ${businessesToCreateLeadsFor.length} businesses`);
+            
+            // Create leads for all businesses
+            const createdLeads = [];
+            for (const providerData of businessesToCreateLeadsFor) {
                 try {
-                    const locationCity = primary.business.city || null;
-                    const locationState = primary.business.state || null;
+                    const locationCity = providerData.business.city || null;
+                    const locationState = providerData.business.state || null;
 
-                    console.log('Creating lead for primary provider...');
-                    primaryLead = await Lead.create({
+                    console.log(`Creating lead for business ${providerData.business.id} (owner: ${providerData.owner.id}, isPrimary: ${providerData.isPrimary})...`);
+                    const lead = await Lead.create({
                         customerId: customer.id,
-                        businessId: primary.business.id,
-                        providerId: primary.owner.id, // User ID
+                        businessId: providerData.business.id,
+                        providerId: providerData.owner.id, // User ID
                         serviceType: subCategoryName
                             ? `${categoryName} - ${subCategoryName}`
                             : categoryName,
@@ -4639,38 +4725,47 @@ router.post('/', protect, async (req, res) => {
                             projectTitle: serviceRequest.projectTitle,
                             preferredDate: serviceRequest.preferredDate,
                             preferredTime: serviceRequest.preferredTime,
-                            attachments: serviceRequest.attachments
+                            attachments: serviceRequest.attachments,
+                            isPrimary: providerData.isPrimary
                         })
                     });
 
-                    console.log(`✅ Lead created successfully: ID=${primaryLead.id}, businessId=${primary.business.id}, providerId=${primary.owner.id}`);
-
-                    // Update service request with primary provider
-                    if (primary.providerProfile && primary.providerProfile.id) {
-                        await ServiceRequest.update(
-                            { primaryProviderId: primary.providerProfile.id },
-                            { where: { id: serviceRequest.id } }
-                        );
-                        console.log(`✅ Updated service request with primaryProviderId: ${primary.providerProfile.id}`);
-                    } else {
-                        console.warn(`⚠️ Cannot update primaryProviderId - providerProfile.id is missing`);
+                    console.log(`✅ Lead created successfully: ID=${lead.id}, businessId=${providerData.business.id}, providerId=${providerData.owner.id}, isPrimary=${providerData.isPrimary}`);
+                    createdLeads.push(lead);
+                    
+                    // Track primary lead
+                    if (providerData.isPrimary) {
+                        primaryLead = lead;
                     }
                 } catch (leadCreateError) {
-                    console.error('❌ Error creating lead:', leadCreateError);
+                    console.error(`❌ Error creating lead for business ${providerData.business.id}:`, leadCreateError);
                     console.error('Lead creation error details:', {
                         message: leadCreateError.message,
                         stack: leadCreateError.stack,
                         name: leadCreateError.name
                     });
-                    // Don't throw - continue with email sending even if lead creation fails
-                    primaryLead = null;
+                    // Continue creating leads for other businesses even if one fails
                 }
+            }
+            
+            // Update service request with primary provider
+            if (primary && primary.providerProfile && primary.providerProfile.id) {
+                await ServiceRequest.update(
+                    { primaryProviderId: primary.providerProfile.id },
+                    { where: { id: serviceRequest.id } }
+                );
+                console.log(`✅ Updated service request with primaryProviderId: ${primary.providerProfile.id}`);
+            } else if (primary) {
+                console.warn(`⚠️ Cannot update primaryProviderId - providerProfile.id is missing`);
+            }
+            
+            if (createdLeads.length === 0) {
+                console.warn('⚠️ No leads were created. Reasons could be:');
+                console.warn('   - No valid businesses found');
+                console.warn('   - All businesses were filtered out');
+                console.warn('   - Lead creation failed for all businesses');
             } else {
-                console.warn('⚠️ Cannot create lead - missing required data:', {
-                    primary: !!primary,
-                    business: !!(primary && primary.business),
-                    owner: !!(primary && primary.owner)
-                });
+                console.log(`✅ Successfully created ${createdLeads.length} lead(s) for service request ${serviceRequest.id}`);
             }
 
             // Create AlternativeProviderSelection entries for alternatives

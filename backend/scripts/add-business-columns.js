@@ -45,6 +45,14 @@ async function addColumns() {
       console.log('verificationStatus column already exists or error:', e.message);
     }
     
+    // Add services column
+    try {
+      await sequelize.query('ALTER TABLE businesses ADD COLUMN services JSON DEFAULT (JSON_ARRAY())');
+      console.log('Added services column');
+    } catch (e) {
+      console.log('services column already exists or error:', e.message);
+    }
+    
     console.log('\nDone!');
     process.exit(0);
   } catch (e) {

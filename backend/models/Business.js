@@ -125,6 +125,11 @@ const Business = sequelize.define('Business', {
     allowNull: true,
     defaultValue: []
   },
+  services: {
+    type: DataTypes.JSON,
+    allowNull: true,
+    defaultValue: []
+  },
   isVerified: {
     type: DataTypes.BOOLEAN,
     defaultValue: false

@@ -504,7 +504,7 @@
 .business-rating .rating-value {
     font-size: 12px;
     font-weight: 600;
-    color: #6b7280;
+    color: #000000 !important;
 }
 
 .business-description {
@@ -1025,6 +1025,19 @@
     border-radius: 8px;
     padding: 8px;
     background: rgba(254, 226, 226, 0.1);
+}
+
+.subcategory-grid.has-error {
+    border: 2px dashed #fca5a5;
+    border-radius: 8px;
+    padding: 8px;
+    background: rgba(254, 226, 226, 0.1);
+}
+
+.required {
+    color: #ef4444;
+    font-weight: 600;
+    margin-left: 4px;
 }
 
 .zip-code-input-wrapper.has-error {

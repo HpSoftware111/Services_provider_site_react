@@ -437,7 +437,7 @@ router.get('/my-businesses', protect, async (req, res) => {
         'id', 'name', 'slug', 'description', 'categoryId', 'ownerId',
         'address', 'city', 'state', 'zipCode', 'phone', 'email', 'website',
         'ratingAverage', 'ratingCount', 'subCategoryId', 'logo', 'images',
-        'isVerified', 'isActive', 'isFeatured', 'isPublic', 'createdAt', 'updatedAt'
+        'services', 'isVerified', 'isActive', 'isFeatured', 'isPublic', 'createdAt', 'updatedAt'
       ],
       include: [
         {
@@ -716,7 +716,7 @@ router.get('/:id', optionalAuth, async (req, res) => {
         { model: User, as: 'owner', attributes: ['id', 'name', 'email'] }
       ],
       attributes: {
-        include: ['latitude', 'longitude'] // Explicitly include latitude and longitude
+        include: ['latitude', 'longitude', 'services'] // Explicitly include latitude, longitude, and services
       }
     });
 
@@ -830,6 +830,17 @@ router.put('/:id', protect, async (req, res) => {
     // Prepare update data
     const updateData = { ...req.body };
 
+    // Validate services field if provided (should be an array of strings)
+    if (updateData.services !== undefined) {
+      if (!Array.isArray(updateData.services)) {
+        return res.status(400).json({ error: 'Services must be an array' });
+      }
+      // Ensure all services are strings
+      updateData.services = updateData.services.filter(service => 
+        typeof service === 'string' && service.trim().length > 0
+      ).map(service => service.trim());
+    }
+
     // If business was rejected and owner is updating, clear rejection fields and set to pending
     if (business.rejectionReason && business.ownerId === req.user.id && req.user.role !== 'admin') {
       updateData.rejectionReason = null;
@@ -853,7 +864,10 @@ router.put('/:id', protect, async (req, res) => {
       include: [
         { model: Category, as: 'category', attributes: ['id', 'name', 'slug', 'icon'] },
         { model: User, as: 'owner', attributes: ['id', 'name', 'email'] }
-      ]
+      ],
+      attributes: {
+        include: ['services'] // Ensure services field is included in response
+      }
     });
 
     res.json({
