@@ -48,7 +48,12 @@ const UserDashboardLayout = ({ children }) => {
     navigate('/');
   };
 
-  const isActive = (path) => location.pathname === path;
+  const isActive = (path) => {
+    if (path === '/user-dashboard/my-business') {
+      return location.pathname === path || location.pathname === '/user-dashboard';
+    }
+    return location.pathname === path || location.pathname.startsWith(path + '/');
+  };
 
   const handleEditName = () => {
     setEditingField('name');
@@ -111,27 +116,27 @@ const UserDashboardLayout = ({ children }) => {
   // Check if user is a provider/business owner
   const isProvider = user?.role === 'business_owner' || user?.role === 'provider';
 
-  // Customer section items
+  // Customer menu items (only for customers)
   const customerItems = [
-    { path: '/user-dashboard/my-business', icon: 'fa-store', label: 'My Business' },
-    { path: '/user-dashboard/business-information', icon: 'fa-info-circle', label: 'Business Information' },
-    { path: '/user-dashboard/categories-services', icon: 'fa-tags', label: 'Categories & Services' },
-    { path: '/user-dashboard/photos-videos', icon: 'fa-images', label: 'Photos & Videos' },
-    { path: '/user-dashboard/business-location', icon: 'fa-map-marker-alt', label: 'Business Location' },
-    { path: '/user-dashboard/deals-promotions', icon: 'fa-percent', label: 'Deals & Promotions' },
-    { path: '/user-dashboard/verify-business', icon: 'fa-shield-alt', label: 'Verify Your Business' },
-    { path: '/user-dashboard/reviews', icon: 'fa-star', label: 'Reviews' },
     { path: '/user-dashboard/requests', icon: 'fa-clipboard-list', label: 'My Requests' },
     { path: '/user-dashboard/account-settings', icon: 'fa-cog', label: 'Account Settings' },
   ];
 
-  // Provider section items
+  // Provider menu items (only for providers)
   const providerItems = [
+    { path: '/user-dashboard/my-business', icon: 'fa-store', label: 'My Business' },
+    { path: '/user-dashboard/business-information', icon: 'fa-info-circle', label: 'Business Information' },
+    { path: '/user-dashboard/categories-services', icon: 'fa-tags', label: 'Categories & Services' },
+    { path: '/user-dashboard/photos-videos', icon: 'fa-images', label: 'Photo & Videos' },
+    { path: '/user-dashboard/business-location', icon: 'fa-map-marker-alt', label: 'Business Location' },
+    { path: '/user-dashboard/deals-promotions', icon: 'fa-percent', label: 'Deals & Promotions' },
+    { path: '/user-dashboard/verify-business', icon: 'fa-shield-alt', label: 'Verify Your Business' },
+    { path: '/user-dashboard/reviews', icon: 'fa-star', label: 'Reviews' },
     { path: '/user-dashboard/leads', icon: 'fa-bullhorn', label: 'My Leads' },
     { path: '/user-dashboard/work-orders', icon: 'fa-tasks', label: 'Work Orders' },
-    { path: '/user-dashboard/messages', icon: 'fa-envelope', label: 'Messages' },
-    { path: '/user-dashboard/payouts', icon: 'fa-money-bill-wave', label: 'My Payouts' },
-    { path: '/user-dashboard/subscriptions', icon: 'fa-crown', label: 'Subscriptions' }
+    { path: '/user-dashboard/messages', icon: 'fa-envelope', label: 'Support Tickets' },
+    { path: '/user-dashboard/subscriptions', icon: 'fa-crown', label: 'Subscriptions' },
+    { path: '/user-dashboard/account-settings', icon: 'fa-cog', label: 'Account Settings' },
   ];
 
   return (
@@ -205,12 +210,10 @@ const UserDashboardLayout = ({ children }) => {
           </div>
 
           <nav className="sidebar-nav">
-            {/* Customer Section */}
-            <div className="nav-section">
-              <div className="nav-divider">
-                <span className="nav-divider-text">Customer</span>
-              </div>
-              {customerItems.map((item) => (
+            {/* Menu Items - Show based on user role */}
+            {!isProvider ? (
+              // Customer menu items
+              customerItems.map((item) => (
                 <Link
                   key={item.path}
                   to={item.path}
@@ -220,27 +223,20 @@ const UserDashboardLayout = ({ children }) => {
                   <i className={`fas ${item.icon}`}></i>
                   <span>{item.label}</span>
                 </Link>
-              ))}
-            </div>
-
-            {/* Provider Section */}
-            {isProvider && (
-              <div className="nav-section">
-                <div className="nav-divider">
-                  <span className="nav-divider-text">Provider</span>
-                </div>
-                {providerItems.map((item) => (
-                  <Link
-                    key={item.path}
-                    to={item.path}
-                    className={`nav-item ${isActive(item.path) ? 'active' : ''}`}
-                    onClick={() => setMobileMenuOpen(false)}
-                  >
-                    <i className={`fas ${item.icon}`}></i>
-                    <span>{item.label}</span>
-                  </Link>
-                ))}
-              </div>
+              ))
+            ) : (
+              // Provider menu items
+              providerItems.map((item) => (
+                <Link
+                  key={item.path}
+                  to={item.path}
+                  className={`nav-item ${isActive(item.path) ? 'active' : ''}`}
+                  onClick={() => setMobileMenuOpen(false)}
+                >
+                  <i className={`fas ${item.icon}`}></i>
+                  <span>{item.label}</span>
+                </Link>
+              ))
             )}
           </nav>
 
@@ -354,7 +350,7 @@ const UserDashboardLayout = ({ children }) => {
                   Your subscription has expired
                 </strong>
                 <span style={{ color: '#78350f', fontSize: '14px' }}>
-                  {subscriptionStatus.currentPeriodEnd 
+                  {subscriptionStatus.currentPeriodEnd
                     ? `Expired on ${new Date(subscriptionStatus.currentPeriodEnd).toLocaleDateString()}. `
                     : ''}
                   Renew your subscription to continue accessing premium features.

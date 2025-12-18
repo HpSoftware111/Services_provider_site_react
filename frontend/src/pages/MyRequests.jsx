@@ -2,7 +2,6 @@ import React, { useState, useEffect, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AuthContext } from '../context/AuthContext';
 import api from '../services/api';
-import PaymentModal from '../components/PaymentModal';
 import ReviewForm from '../components/ReviewForm';
 import './MyRequests.css';
 
@@ -22,8 +21,6 @@ const MyRequests = () => {
     const [selectedRequest, setSelectedRequest] = useState(null);
     const [modalLoading, setModalLoading] = useState(false);
     const [showModal, setShowModal] = useState(false);
-    const [showPaymentModal, setShowPaymentModal] = useState(false);
-    const [selectedProposal, setSelectedProposal] = useState(null);
     const [showReviewForm, setShowReviewForm] = useState(false);
     const [reviewStatus, setReviewStatus] = useState(null);
     const [refreshInterval, setRefreshInterval] = useState(null);
@@ -34,6 +31,9 @@ const MyRequests = () => {
     const [showCancelRequestModal, setShowCancelRequestModal] = useState(false);
     const [cancelRejectionReason, setCancelRejectionReason] = useState('');
     const [cancelRejectionReasonOther, setCancelRejectionReasonOther] = useState('');
+    const [showConfirmAcceptModal, setShowConfirmAcceptModal] = useState(false);
+    const [selectedProposalForAccept, setSelectedProposalForAccept] = useState(null);
+    const [acceptingProposal, setAcceptingProposal] = useState(false);
 
     useEffect(() => {
         loadRequests();
@@ -291,8 +291,63 @@ const MyRequests = () => {
     };
 
     const handleAcceptProposal = (proposal) => {
-        setSelectedProposal(proposal);
-        setShowPaymentModal(true);
+        setSelectedProposalForAccept(proposal);
+        setShowConfirmAcceptModal(true);
+    };
+
+    const handleConfirmAcceptProposal = async () => {
+        if (!selectedProposalForAccept || !selectedRequest || acceptingProposal) return;
+
+        setAcceptingProposal(true);
+        const requestId = selectedRequest.id;
+        const proposalId = selectedProposalForAccept.id;
+
+        try {
+            setMessage({ type: '', text: '' });
+            
+            // Close modal immediately to prevent it from staying open
+            setShowConfirmAcceptModal(false);
+            setSelectedProposalForAccept(null);
+
+            const response = await api.post(
+                `/service-requests/my/service-requests/${requestId}/proposals/${proposalId}/accept`,
+                {},
+                {
+                    timeout: 60000
+                }
+            );
+
+            if (response.data.success) {
+                setMessage({
+                    type: 'success',
+                    text: 'Proposal accepted successfully! Work has started.'
+                });
+
+                // Small delay to ensure backend has processed the update
+                await new Promise(resolve => setTimeout(resolve, 500));
+
+                // Reload the main requests list
+                await loadRequests();
+
+                // Reload the request details to show updated status
+                if (requestId) {
+                    await handleViewDetails(requestId);
+                }
+            } else {
+                setMessage({
+                    type: 'error',
+                    text: response.data.error || 'Failed to accept proposal'
+                });
+            }
+        } catch (error) {
+            console.error('Error accepting proposal:', error);
+            setMessage({
+                type: 'error',
+                text: error.response?.data?.error || 'Failed to accept proposal'
+            });
+        } finally {
+            setAcceptingProposal(false);
+        }
     };
 
     const handleRejectProposal = (proposal) => {
@@ -481,34 +536,6 @@ const MyRequests = () => {
         }
     };
 
-    const handlePaymentSuccess = async (data) => {
-        setMessage({
-            type: 'success',
-            text: 'Proposal accepted! Payment successful. Work has started.'
-        });
-
-        // Close payment modal first
-        setShowPaymentModal(false);
-        setSelectedProposal(null);
-
-        // Small delay to ensure backend has processed the update
-        await new Promise(resolve => setTimeout(resolve, 500));
-
-        // Reload the main requests list to update status badges (shows "In Progress" instead of "Lead Assigned")
-        await loadRequests();
-
-        // Reload the request details to show updated status (keep detail modal open)
-        // This will show: 
-        // - Service request status changed from "LEAD_ASSIGNED" to "IN_PROGRESS" 
-        // - Proposal status changed from "SENT" to "ACCEPTED"
-        // - Primary provider assigned
-        // - Accept/Reject buttons removed (since proposal is now accepted)
-        if (selectedRequest && selectedRequest.id) {
-            await handleViewDetails(selectedRequest.id);
-        }
-
-        // Detail modal stays open so user can see the updated status immediately
-    };
 
     const formatDateTime = (dateString, timeString) => {
         if (!dateString) return 'Not specified';
@@ -812,7 +839,10 @@ const MyRequests = () => {
                                                         price: proposalPrice,
                                                         priceType: typeof proposalPrice,
                                                         details: proposal.details ? `${proposal.details.substring(0, 30)}...` : 'EMPTY',
-                                                        status: proposal.status
+                                                        status: proposal.status,
+                                                        provider: proposal.provider,
+                                                        business: proposal.business,
+                                                        lead: proposal.lead
                                                     });
 
                                                     return (
@@ -849,14 +879,59 @@ const MyRequests = () => {
                                                                 {proposal.createdAt && (
                                                                     <span><i className="fas fa-calendar"></i> {formatDate(proposal.createdAt)}</span>
                                                                 )}
-                                                                {/* Only show provider contact info after proposal is accepted */}
-                                                                {proposal.status === 'ACCEPTED' && proposal.provider?.email && (
-                                                                    <span><i className="fas fa-envelope"></i> {proposal.provider.email}</span>
-                                                                )}
-                                                                {proposal.status === 'ACCEPTED' && proposal.provider?.phone && (
-                                                                    <span><i className="fas fa-phone"></i> {proposal.provider.phone}</span>
-                                                                )}
                                                             </div>
+                                                            {/* Show provider contact info after quote is sent (highlighted) */}
+                                                            {(proposal.status === 'SENT' || !proposal.status) && proposal.provider && (
+                                                                <div className="provider-contact-info">
+                                                                    <div className="provider-contact-header">
+                                                                        <i className="fas fa-user-circle"></i>
+                                                                        <strong>Provider Contact Information</strong>
+                                                                    </div>
+                                                                    {proposal.provider.email ? (
+                                                                        <div className="contact-item highlighted">
+                                                                            <i className="fas fa-envelope"></i>
+                                                                            <a href={`mailto:${proposal.provider.email}`} className="contact-link">
+                                                                                {proposal.provider.email}
+                                                                            </a>
+                                                                        </div>
+                                                                    ) : null}
+                                                                    {proposal.provider.phone ? (
+                                                                        <div className="contact-item highlighted">
+                                                                            <i className="fas fa-phone"></i>
+                                                                            <a href={`tel:${proposal.provider.phone}`} className="contact-link">
+                                                                                {proposal.provider.phone}
+                                                                            </a>
+                                                                        </div>
+                                                                    ) : null}
+                                                                    {!proposal.provider.email && !proposal.provider.phone && (
+                                                                        <div className="contact-item" style={{ color: '#9ca3af', fontStyle: 'italic' }}>
+                                                                            <i className="fas fa-info-circle"></i>
+                                                                            <span>Contact information not available</span>
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            )}
+                                                            {/* Show provider contact info after proposal is accepted */}
+                                                            {proposal.status === 'ACCEPTED' && proposal.provider && (
+                                                                <div className="provider-contact-info">
+                                                                    {proposal.provider.email && (
+                                                                        <div className="contact-item">
+                                                                            <i className="fas fa-envelope"></i>
+                                                                            <a href={`mailto:${proposal.provider.email}`} className="contact-link">
+                                                                                {proposal.provider.email}
+                                                                            </a>
+                                                                        </div>
+                                                                    )}
+                                                                    {proposal.provider.phone && (
+                                                                        <div className="contact-item">
+                                                                            <i className="fas fa-phone"></i>
+                                                                            <a href={`tel:${proposal.provider.phone}`} className="contact-link">
+                                                                                {proposal.provider.phone}
+                                                                            </a>
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            )}
                                                             {/* Show Accept/Reject buttons for SENT proposals when status allows */}
                                                             {(proposal.status === 'SENT' || !proposal.status) && selectedRequest.status !== 'IN_PROGRESS' && selectedRequest.status !== 'COMPLETED' && selectedRequest.status !== 'APPROVED' && (
                                                                 <div className="proposal-actions">
@@ -865,7 +940,7 @@ const MyRequests = () => {
                                                                         onClick={() => handleAcceptProposal(proposal)}
                                                                     >
                                                                         <i className="fas fa-check-circle"></i>
-                                                                        Accept & Pay
+                                                                        Accept
                                                                     </button>
                                                                     <button
                                                                         className="btn-reject"
@@ -1487,18 +1562,96 @@ const MyRequests = () => {
                 </div>
             )}
 
-            {/* Payment Modal */}
-            {showPaymentModal && selectedProposal && selectedRequest && (
-                <PaymentModal
-                    show={showPaymentModal}
-                    onClose={() => {
-                        setShowPaymentModal(false);
-                        setSelectedProposal(null);
-                    }}
-                    proposal={selectedProposal}
-                    serviceRequest={selectedRequest}
-                    onSuccess={handlePaymentSuccess}
-                />
+            {/* Confirm Accept Proposal Modal */}
+            {showConfirmAcceptModal && selectedProposalForAccept && selectedRequest && (
+                <div className="modal-overlay" onClick={() => setShowConfirmAcceptModal(false)}>
+                    <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '500px' }}>
+                        <div className="modal-header">
+                            <h2>
+                                <i className="fas fa-question-circle"></i>
+                                Confirm Acceptance
+                            </h2>
+                            <button
+                                className="modal-close"
+                                onClick={() => {
+                                    setShowConfirmAcceptModal(false);
+                                    setSelectedProposalForAccept(null);
+                                }}
+                            >
+                                <i className="fas fa-times"></i>
+                            </button>
+                        </div>
+
+                        <div className="modal-body">
+                            <div style={{ marginBottom: '20px' }}>
+                                <p style={{ marginBottom: '15px', color: '#333', fontSize: '16px', fontWeight: '600' }}>
+                                    Did you discuss with provider about project via phone or email?
+                                </p>
+                                {selectedProposalForAccept.provider && (
+                                    <div style={{ 
+                                        background: '#f0f9ff', 
+                                        padding: '15px', 
+                                        borderRadius: '8px', 
+                                        marginBottom: '15px',
+                                        border: '1px solid #bae6fd'
+                                    }}>
+                                        <div style={{ marginBottom: '10px', fontWeight: '600', color: '#1e40af' }}>
+                                            Provider Contact:
+                                        </div>
+                                        {selectedProposalForAccept.provider.email && (
+                                            <div style={{ marginBottom: '8px' }}>
+                                                <i className="fas fa-envelope" style={{ color: '#667eea', marginRight: '8px' }}></i>
+                                                <a href={`mailto:${selectedProposalForAccept.provider.email}`} style={{ color: '#1e40af', textDecoration: 'none' }}>
+                                                    {selectedProposalForAccept.provider.email}
+                                                </a>
+                                            </div>
+                                        )}
+                                        {selectedProposalForAccept.provider.phone && (
+                                            <div>
+                                                <i className="fas fa-phone" style={{ color: '#667eea', marginRight: '8px' }}></i>
+                                                <a href={`tel:${selectedProposalForAccept.provider.phone}`} style={{ color: '#1e40af', textDecoration: 'none' }}>
+                                                    {selectedProposalForAccept.provider.phone}
+                                                </a>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        <div className="modal-actions">
+                            <button
+                                type="button"
+                                className="cancel-btn"
+                                onClick={() => {
+                                    setShowConfirmAcceptModal(false);
+                                    setSelectedProposalForAccept(null);
+                                }}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                className="btn-accept"
+                                onClick={handleConfirmAcceptProposal}
+                                disabled={acceptingProposal}
+                                style={{ marginLeft: '10px' }}
+                            >
+                                {acceptingProposal ? (
+                                    <>
+                                        <i className="fas fa-spinner fa-spin"></i>
+                                        Processing...
+                                    </>
+                                ) : (
+                                    <>
+                                        <i className="fas fa-check-circle"></i>
+                                        Yes, I've Discussed - Accept Proposal
+                                    </>
+                                )}
+                            </button>
+                        </div>
+                    </div>
+                </div>
             )}
         </div>
     );

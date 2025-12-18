@@ -933,6 +933,88 @@
     flex-shrink: 0;
 }
 
+/* Provider Contact Info - Highlighted */
+.provider-contact-info {
+    margin-top: 16px;
+    padding: 16px;
+    background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+    border-radius: 8px;
+    border: 2px solid #667eea;
+    box-shadow: 0 2px 8px rgba(102, 126, 234, 0.15);
+}
+
+.provider-contact-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+    color: #1e40af;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.provider-contact-header i {
+    color: #667eea;
+    font-size: 16px;
+}
+
+.contact-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    margin-bottom: 8px;
+    background: white;
+    border-radius: 6px;
+    border: 1px solid #e5e7eb;
+    transition: all 0.2s ease;
+}
+
+.contact-item:last-child {
+    margin-bottom: 0;
+}
+
+.contact-item.highlighted {
+    background: linear-gradient(135deg, #fff7ed 0%, #ffedd5 100%);
+    border: 2px solid #f59e0b;
+    box-shadow: 0 2px 6px rgba(245, 158, 11, 0.2);
+}
+
+.contact-item i {
+    color: #667eea;
+    font-size: 16px;
+    width: 20px;
+    text-align: center;
+    flex-shrink: 0;
+}
+
+.contact-item.highlighted i {
+    color: #f59e0b;
+    font-size: 18px;
+}
+
+.contact-link {
+    color: #1e40af;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 15px;
+    transition: color 0.2s ease;
+}
+
+.contact-item.highlighted .contact-link {
+    color: #d97706;
+    font-size: 16px;
+}
+
+.contact-link:hover {
+    color: #667eea;
+    text-decoration: underline;
+}
+
+.contact-item.highlighted .contact-link:hover {
+    color: #f59e0b;
+}
+
 .proposal-status-message {
     margin-top: 12px;
     padding: 8px 12px;

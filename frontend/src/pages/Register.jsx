@@ -35,7 +35,7 @@ const Register = () => {
         email: formData.email,
         password: formData.password
       });
-      
+
       setRegistrationComplete(true);
       setSuccess(response.data.message || 'Registration successful! Please check your email to verify your account.');
     } catch (error) {
@@ -57,7 +57,7 @@ const Register = () => {
             We've sent a verification link to <strong>{formData.email}</strong>
           </p>
           <p className="verification-instructions">
-            Please click the link in the email to verify your account. 
+            Please click the link in the email to verify your account.
             Once verified, you can log in to your account.
           </p>
           <div className="verification-tips">
@@ -79,9 +79,9 @@ const Register = () => {
   return (
     <div className="auth-page">
       <div className="auth-container">
-        <h2>Create Account</h2>
+        <h2>Create a Customer Account</h2>
         <p>Join CityLocal 101 to discover amazing businesses</p>
-        
+
         {error && <div className="alert alert-error">
           <i className="fas fa-exclamation-circle"></i> {error}
         </div>}
@@ -89,7 +89,7 @@ const Register = () => {
         {success && <div className="alert alert-success">
           <i className="fas fa-check-circle"></i> {success}
         </div>}
-        
+
         <form onSubmit={handleSubmit}>
           <div className="form-group">
             <label><i className="fas fa-user"></i> Full Name</label>
@@ -159,7 +159,7 @@ const Register = () => {
             )}
           </button>
         </form>
-        
+
         <p className="auth-link">
           Already have an account? <Link to="/login">Sign in here</Link>
         </p>

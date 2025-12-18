@@ -617,6 +617,7 @@
 }
 
 .carousel-card {
+  margin: 5px;
   flex: 0 0 calc((100% - 50px) / 3);
   width: calc((100% - 50px) / 3);
   background: white;
@@ -627,7 +628,7 @@
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
   border: 1px solid #e5e7eb;
   position: relative;
-  overflow: hidden;
+  overflow: visible;
   box-sizing: border-box;
 }
 
@@ -731,26 +732,27 @@
 
 .listing-owner-avatar {
   position: absolute;
-  top: 16px;
-  right: 16px;
-  width: 48px;
-  height: 48px;
+  top: 20px;
+  right: 20px;
+  width: 72px;
+  height: 72px;
   border-radius: 50%;
   overflow: hidden;
   background: #f8f9fa;
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 2px solid #e1e8ed;
+  border: 3px solid #e1e8ed;
   cursor: pointer;
   transition: all 0.3s ease;
   z-index: 10;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
 .listing-owner-avatar:hover {
-  transform: scale(1.1);
+  transform: scale(1.05);
   border-color: #667eea;
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+  box-shadow: 0 4px 16px rgba(102, 126, 234, 0.3);
 }
 
 .listing-owner-avatar img {
@@ -760,42 +762,7 @@
 }
 
 .listing-owner-avatar i {
-  font-size: 24px;
-  color: #95a5a6;
-}
-
-.listing-owner-avatar {
-  position: absolute;
-  top: 16px;
-  right: 16px;
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
-  overflow: hidden;
-  background: #f8f9fa;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 2px solid #e1e8ed;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  z-index: 10;
-}
-
-.listing-owner-avatar:hover {
-  transform: scale(1.1);
-  border-color: #667eea;
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
-}
-
-.listing-owner-avatar img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.listing-owner-avatar i {
-  font-size: 24px;
+  font-size: 36px;
   color: #95a5a6;
 }
 
@@ -807,31 +774,40 @@
 
 .listing-header {
   display: flex;
-  justify-content: space-between;
-  align-items: start;
+  flex-direction: column;
+  gap: 10px;
   margin-bottom: 15px;
+  padding-right: 90px;
+  min-height: 60px;
 }
 
 .listing-header h3 {
   color: var(--secondary-color);
   font-size: 18px;
   font-weight: 600;
+  margin: 0;
+  line-height: 1.3;
 }
 
 .rating {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
+  margin-top: 4px;
 }
 
 .stars {
   color: var(--star-color);
-  font-size: 18px;
+  font-size: 16px;
+  letter-spacing: 1px;
+  line-height: 1;
 }
 
 .rating-value {
   font-weight: 600;
   color: var(--text-color);
+  font-size: 15px;
+  margin-left: 2px;
 }
 
 .listing-description {
@@ -997,6 +973,21 @@
   .carousel-wrapper {
     padding: 0 45px;
   }
+
+  .listing-owner-avatar {
+    width: 64px;
+    height: 64px;
+    top: 18px;
+    right: 18px;
+  }
+
+  .listing-owner-avatar i {
+    font-size: 32px;
+  }
+
+  .listing-header {
+    padding-right: 80px;
+  }
 }
 
 @media (max-width: 768px) {
@@ -1013,6 +1004,23 @@
     width: 40px;
     height: 40px;
     font-size: 16px;
+  }
+
+  .listing-owner-avatar {
+    width: 60px;
+    height: 60px;
+    top: 16px;
+    right: 16px;
+    border-width: 2px;
+  }
+
+  .listing-owner-avatar i {
+    font-size: 28px;
+  }
+
+  .listing-header {
+    padding-right: 75px;
+    min-height: 55px;
   }
 }
 

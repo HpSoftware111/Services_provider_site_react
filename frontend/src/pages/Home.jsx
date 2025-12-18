@@ -1,9 +1,11 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { AuthContext } from '../context/AuthContext';
 import api from '../services/api';
 import './Home.css';
 
 const Home = () => {
+  const { user } = useContext(AuthContext);
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
   const [location, setLocation] = useState('');
@@ -18,6 +20,9 @@ const Home = () => {
   const businessInputRef = useRef(null);
   const locationInputRef = useRef(null);
   const carouselRef = useRef(null);
+
+  // Check if user is a provider
+  const isProvider = user?.role === 'business_owner' || user?.role === 'provider';
 
   useEffect(() => {
     loadData();
@@ -120,15 +125,17 @@ const Home = () => {
           <div className="hero-content">
             <h1>Discover Businesses Near You</h1>
             <p>Helping you find the best service providers in your area</p>
-            <div className="hero-action-buttons">
-              <button
-                className="btn-request-service"
-                onClick={() => navigate('/service-request')}
-              >
-                <i className="fas fa-plus-circle"></i>
-                Request a Service
-              </button>
-            </div>
+            {!isProvider && (
+              <div className="hero-action-buttons">
+                <button
+                  className="btn-request-service"
+                  onClick={() => navigate('/service-request')}
+                >
+                  <i className="fas fa-plus-circle"></i>
+                  Request a Service
+                </button>
+              </div>
+            )}
             <form onSubmit={handleSearch} className="search-box">
               <div className="search-input-wrapper" ref={businessInputRef}>
                 <input

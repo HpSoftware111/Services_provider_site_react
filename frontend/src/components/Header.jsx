@@ -33,10 +33,7 @@ const Header = () => {
               <li><Link to="/blog"><i className="fas fa-blog"></i> Blog</Link></li>
               <li><Link to="/support"><i className="fas fa-headset"></i> Support</Link></li>
               {user && (
-                <>
-                  <li><Link to="/user-dashboard/my-business" className="btn-request-service-header"><i className="fas fa-plus-circle"></i> Add a Business</Link></li>
-                  <li><Link to="/user-dashboard" className="btn-dashboard"><i className="fas fa-tachometer-alt"></i> Dashboard</Link></li>
-                </>
+                <li><Link to="/user-dashboard" className="btn-dashboard"><i className="fas fa-tachometer-alt"></i> Dashboard</Link></li>
               )}
               {!user && (
                 <li><Link to="/add-business" className="btn-request-service-header"><i className="fas fa-plus-circle"></i> Add a Business</Link></li>
@@ -196,14 +193,6 @@ const Header = () => {
                         >
                           <i className="fas fa-headset"></i>
                           <span>Support</span>
-                        </Link>
-                        <Link
-                          to="/add-business"
-                          className="mobile-menu-item mobile-menu-item-primary"
-                          onClick={() => setMobileMenuOpen(false)}
-                        >
-                          <i className="fas fa-plus-circle"></i>
-                          <span>Add Your Business for FREE</span>
                         </Link>
                         <Link
                           to="/service-request"

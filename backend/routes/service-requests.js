@@ -844,8 +844,7 @@ router.get('/my/service-requests/:id', protect, async (req, res) => {
                             }
 
                             // Create proposal object from lead metadata
-                            // Only show provider contact info if proposal is ACCEPTED
-                            const isAccepted = proposalStatus === 'ACCEPTED';
+                            // Show provider contact info for all proposals (SENT and ACCEPTED)
                             serviceRequestProposals.push({
                                 id: `pending-${lead.id}`, // Temporary ID
                                 details: pendingProposal.description || '',
@@ -858,8 +857,8 @@ router.get('/my/service-requests/:id', protect, async (req, res) => {
                                 provider: lead.provider ? {
                                     id: lead.provider.id,
                                     name: lead.provider.name || 'Provider',
-                                    email: isAccepted ? (lead.provider.email || null) : null,
-                                    phone: null // Phone not available from lead metadata
+                                    email: lead.provider.email || null,
+                                    phone: lead.provider.phone || null
                                 } : null,
                                 createdAt: lead.updatedAt || new Date() // Use lead update time
                             });
@@ -985,8 +984,7 @@ router.get('/my/service-requests/:id', protect, async (req, res) => {
                 }
             }
 
-            // Only show provider contact info if proposal is ACCEPTED
-            const isAccepted = (proposal.status || 'SENT') === 'ACCEPTED';
+            // Show provider contact info for all proposals (SENT and ACCEPTED)
             const proposalData = {
                 id: proposal.id,
                 details: proposal.details || '',
@@ -999,8 +997,8 @@ router.get('/my/service-requests/:id', protect, async (req, res) => {
                 provider: proposal.provider?.user ? {
                     id: proposal.provider.user.id,
                     name: proposal.provider.user.name || 'Provider',
-                    email: isAccepted ? (proposal.provider.user.email || null) : null,
-                    phone: isAccepted ? (proposal.provider.user.phone || null) : null
+                    email: proposal.provider.user.email || null,
+                    phone: proposal.provider.user.phone || null
                 } : (proposal.provider ? {
                     id: proposal.provider.id,
                     name: 'Provider',
@@ -2944,19 +2942,33 @@ router.post('/my/service-requests/:id/proposals/:proposalId/accept', protect, as
             });
         }
 
-        if (!paymentIntentId) {
-            return res.status(400).json({
-                success: false,
-                error: 'Payment Intent ID is required'
-            });
-        }
+        // Payment is optional - only verify if paymentIntentId is provided
+        // This allows customers to accept proposals without payment
+        // Lead payment is handled separately on provider side
+        let paymentIntent = null;
+        let paymentVerified = false;
 
-        // Verify payment status with Stripe FIRST (before starting transaction)
-        if (!process.env.STRIPE_SECRET_KEY) {
-            return res.status(500).json({
-                success: false,
-                error: 'Payment system not configured'
-            });
+        if (paymentIntentId) {
+            // Verify payment status with Stripe if paymentIntentId is provided
+            if (!process.env.STRIPE_SECRET_KEY) {
+                return res.status(500).json({
+                    success: false,
+                    error: 'Payment system not configured'
+                });
+            }
+
+            try {
+                paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
+                if (paymentIntent.status === 'succeeded') {
+                    paymentVerified = true;
+                }
+            } catch (stripeError) {
+                console.error(`[Accept Proposal] Stripe error retrieving payment intent ${paymentIntentId}:`, stripeError.message);
+                return res.status(400).json({
+                    success: false,
+                    error: `Payment intent not found in Stripe. Please create a new payment or accept without payment.`
+                });
+            }
         }
 
         // Get proposal price first (needed for amount verification)
@@ -2993,29 +3005,8 @@ router.post('/my/service-requests/:id/proposals/:proposalId/accept', protect, as
             }
         }
 
-        // Verify payment intent exists and succeeded in Stripe
-        let paymentIntent;
-        try {
-            paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
-        } catch (stripeError) {
-            console.error(`[Accept Proposal] Stripe error retrieving payment intent ${paymentIntentId}:`, stripeError.message);
-            return res.status(400).json({
-                success: false,
-                error: `Payment intent not found in Stripe. Please create a new payment.`
-            });
-        }
-
-        // CRITICAL: Only proceed if Stripe confirms payment succeeded
-        if (paymentIntent.status !== 'succeeded') {
-            console.error(`[Accept Proposal] Payment intent ${paymentIntentId} status is ${paymentIntent.status}, not succeeded`);
-            return res.status(400).json({
-                success: false,
-                error: `Payment not completed in Stripe. Status: ${paymentIntent.status}. Please complete the payment first.`
-            });
-        }
-
-        // Verify payment amount matches proposal price (if we have the price)
-        if (expectedProposalPrice && !isNaN(expectedProposalPrice)) {
+        // Verify payment amount matches proposal price (only if payment is provided)
+        if (paymentIntentId && paymentIntent && expectedProposalPrice && !isNaN(expectedProposalPrice)) {
             const proposalPriceInCents = Math.round(expectedProposalPrice * 100);
             if (paymentIntent.amount !== proposalPriceInCents) {
                 console.error(`[Accept Proposal] Payment amount mismatch: Stripe=${paymentIntent.amount}, Proposal=${proposalPriceInCents}`);
@@ -3026,7 +3017,11 @@ router.post('/my/service-requests/:id/proposals/:proposalId/accept', protect, as
             }
         }
 
-        console.log(`[Accept Proposal] Payment verified in Stripe: ${paymentIntentId}, amount: ${paymentIntent.amount}, status: ${paymentIntent.status}`);
+        if (paymentIntentId) {
+            console.log(`[Accept Proposal] Payment verified in Stripe: ${paymentIntentId}, amount: ${paymentIntent.amount}, status: ${paymentIntent.status}`);
+        } else {
+            console.log(`[Accept Proposal] Accepting proposal without payment (payment not required for customer acceptance)`);
+        }
 
         // Start transaction with optimized settings to prevent lock timeouts
         const { sequelize } = require('../config/database');
@@ -3133,15 +3128,17 @@ router.post('/my/service-requests/:id/proposals/:proposalId/accept', protect, as
                 }
 
                 // Check if proposal already exists (might have been created by webhook)
-                // First try to find by payment intent ID
-                proposal = await Proposal.findOne({
-                    where: {
-                        serviceRequestId: requestId,
-                        stripePaymentIntentId: paymentIntentId
-                    },
-                    lock: Sequelize.Transaction.LOCK.UPDATE,
-                    transaction
-                });
+                // First try to find by payment intent ID (if payment was provided)
+                if (paymentIntentId) {
+                    proposal = await Proposal.findOne({
+                        where: {
+                            serviceRequestId: requestId,
+                            stripePaymentIntentId: paymentIntentId
+                        },
+                        lock: Sequelize.Transaction.LOCK.UPDATE,
+                        transaction
+                    });
+                }
 
                 // If not found by payment intent, try to find by provider and service request
                 // (in case payment intent wasn't stored yet or proposal was created differently)
@@ -3163,11 +3160,11 @@ router.post('/my/service-requests/:id/proposals/:proposalId/accept', protect, as
                             transaction
                         });
 
-                        // If found, update it with the payment intent ID
-                        if (proposal && !proposal.stripePaymentIntentId) {
+                        // If found, update it with the payment intent ID (if payment was provided)
+                        if (proposal && paymentIntentId && !proposal.stripePaymentIntentId) {
                             proposal.stripePaymentIntentId = paymentIntentId;
-                            proposal.paymentStatus = paymentIntent.status === 'succeeded' ? 'succeeded' : 'pending';
-                            proposal.paidAt = paymentIntent.status === 'succeeded' ? new Date() : null;
+                            proposal.paymentStatus = paymentIntent && paymentIntent.status === 'succeeded' ? 'succeeded' : 'pending';
+                            proposal.paidAt = paymentIntent && paymentIntent.status === 'succeeded' ? new Date() : null;
                             await proposal.save({ transaction });
                             console.log(`[Accept Proposal] Updated existing proposal ${proposal.id} with payment intent ${paymentIntentId}`);
                         }
@@ -3195,19 +3192,19 @@ router.post('/my/service-requests/:id/proposals/:proposalId/accept', protect, as
                     }
 
                     // Create proposal from lead metadata
-                    // IMPORTANT: Only set paymentStatus to 'succeeded' if Stripe confirms it
+                    // Create proposal - payment is optional
                     proposal = await Proposal.create({
                         serviceRequestId: requestId,
                         providerId: providerProfile.id,
                         details: metadata.pendingProposal.description || '',
                         price: parseFloat(metadata.pendingProposal.price || 0),
                         status: 'SENT',
-                        stripePaymentIntentId: paymentIntentId,
-                        paymentStatus: paymentIntent.status === 'succeeded' ? 'succeeded' : 'pending', // Use Stripe's actual status
-                        paidAt: paymentIntent.status === 'succeeded' ? new Date() : null
+                        stripePaymentIntentId: paymentIntentId || null,
+                        paymentStatus: paymentIntentId && paymentIntent && paymentIntent.status === 'succeeded' ? 'succeeded' : (paymentIntentId ? 'pending' : null),
+                        paidAt: paymentIntentId && paymentIntent && paymentIntent.status === 'succeeded' ? new Date() : null
                     }, { transaction });
 
-                    console.log(`[Accept Proposal] Created proposal ${proposal.id} from pending lead ${leadId} with paymentStatus=${paymentIntent.status === 'succeeded' ? 'succeeded' : 'pending'}`);
+                    console.log(`[Accept Proposal] Created proposal ${proposal.id} from pending lead ${leadId} with paymentStatus=${paymentIntentId && paymentIntent ? (paymentIntent.status === 'succeeded' ? 'succeeded' : 'pending') : 'no payment'}`);
 
                     console.log(`✅ Created proposal ${proposal.id} from pending lead ${leadId}`);
                 }
@@ -3227,12 +3224,17 @@ router.post('/my/service-requests/:id/proposals/:proposalId/accept', protect, as
                 }
 
                 // Find proposal WITHIN transaction with lock
+                // If paymentIntentId is provided, match by it; otherwise just match by proposal ID
+                const proposalWhere = {
+                    id: proposalId,
+                    serviceRequestId: requestId
+                };
+                if (paymentIntentId) {
+                    proposalWhere.stripePaymentIntentId = paymentIntentId;
+                }
+
                 proposal = await Proposal.findOne({
-                    where: {
-                        id: proposalId,
-                        serviceRequestId: requestId,
-                        stripePaymentIntentId: paymentIntentId
-                    },
+                    where: proposalWhere,
                     lock: Sequelize.Transaction.LOCK.UPDATE,
                     transaction
                 });
@@ -3241,7 +3243,7 @@ router.post('/my/service-requests/:id/proposals/:proposalId/accept', protect, as
                     await transaction.rollback();
                     return res.status(404).json({
                         success: false,
-                        error: 'Proposal not found or payment intent mismatch'
+                        error: paymentIntentId ? 'Proposal not found or payment intent mismatch' : 'Proposal not found'
                     });
                 }
             }
@@ -3274,22 +3276,26 @@ router.post('/my/service-requests/:id/proposals/:proposalId/accept', protect, as
                 });
             }
 
-            // Update proposal - ONLY set paymentStatus to succeeded if Stripe confirms it
-            // This ensures database matches Stripe's actual status
+            // Update proposal - payment is optional
+            const updateData = {
+                status: 'ACCEPTED'
+            };
+
+            if (paymentIntentId) {
+                updateData.stripePaymentIntentId = paymentIntentId;
+                updateData.paymentStatus = paymentIntent && paymentIntent.status === 'succeeded' ? 'succeeded' : 'pending';
+                updateData.paidAt = paymentIntent && paymentIntent.status === 'succeeded' ? new Date() : null;
+            }
+
             await Proposal.update(
-                {
-                    status: 'ACCEPTED',
-                    paymentStatus: paymentIntent.status === 'succeeded' ? 'succeeded' : 'pending', // Use Stripe's actual status
-                    paidAt: paymentIntent.status === 'succeeded' ? new Date() : null,
-                    stripePaymentIntentId: paymentIntentId // Ensure payment intent ID is saved
-                },
+                updateData,
                 {
                     where: { id: proposalId },
                     transaction
                 }
             );
 
-            console.log(`[Accept Proposal] Updated proposal ${proposalId} with paymentStatus=${paymentIntent.status === 'succeeded' ? 'succeeded' : 'pending'}`);
+            console.log(`[Accept Proposal] Updated proposal ${proposalId} with paymentStatus=${paymentIntentId && paymentIntent ? (paymentIntent.status === 'succeeded' ? 'succeeded' : 'pending') : 'no payment'}`);
 
             // If this was a pending proposal, update the lead status
             if (isPendingProposal && leadId && !isNaN(leadId)) {
@@ -3366,7 +3372,7 @@ router.post('/my/service-requests/:id/proposals/:proposalId/accept', protect, as
             Promise.all([
                 User.findByPk(req.user.id),
                 Proposal.findByPk(proposalId, {
-                    attributes: ['id', 'price', 'details']
+                    attributes: ['id', 'price', 'details', 'stripePaymentIntentId']
                 })
             ]).then(([customer, proposalData]) => {
                 if (!customer || !proposalData) {
@@ -3403,13 +3409,13 @@ router.post('/my/service-requests/:id/proposals/:proposalId/accept', protect, as
                                         Hi ${customerName},
                                     </p>
                                     <p style="color: #333; font-size: 16px; line-height: 1.6;">
-                                        Great news! Your payment has been processed and the proposal for <strong>${projectTitle}</strong> has been accepted.
+                                        Great news! The proposal for <strong>${projectTitle}</strong> has been accepted${proposalData.stripePaymentIntentId ? ' and payment has been processed' : ''}.
                                     </p>
                                     <div style="background-color: #f0f9ff; padding: 20px; border-radius: 8px; margin: 20px 0;">
                                         <h3 style="color: #1e40af; margin-top: 0;">Service Details:</h3>
                                         <p style="color: #333; margin: 5px 0;"><strong>Category:</strong> ${categoryName}</p>
                                         <p style="color: #333; margin: 5px 0;"><strong>Provider:</strong> ${providerName}</p>
-                                        <p style="color: #333; margin: 5px 0;"><strong>Amount Paid:</strong> $${parseFloat(proposalPrice).toFixed(2)}</p>
+                                        ${proposalData.stripePaymentIntentId ? `<p style="color: #333; margin: 5px 0;"><strong>Amount Paid:</strong> $${parseFloat(proposalPrice).toFixed(2)}</p>` : `<p style="color: #333; margin: 5px 0;"><strong>Proposal Amount:</strong> $${parseFloat(proposalPrice).toFixed(2)}</p>`}
                                         <p style="color: #333; margin: 5px 0;"><strong>Status:</strong> <span style="color: #059669; font-weight: 600;">IN PROGRESS</span></p>
                                     </div>
                                     <p style="color: #333; font-size: 16px; line-height: 1.6;">
@@ -3444,7 +3450,7 @@ router.post('/my/service-requests/:id/proposals/:proposalId/accept', protect, as
                                         Hi ${providerName},
                                     </p>
                                     <p style="color: #333; font-size: 16px; line-height: 1.6;">
-                                        <strong>Great news!</strong> Your proposal for <strong>${projectTitle}</strong> has been accepted by the customer and payment has been successfully processed.
+                                        <strong>Great news!</strong> Your proposal for <strong>${projectTitle}</strong> has been accepted by the customer${proposalData.stripePaymentIntentId ? ' and payment has been successfully processed' : ''}.
                                     </p>
                                     <div style="background-color: #f0f9ff; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #667eea;">
                                         <h3 style="color: #1e40af; margin-top: 0;">📋 Project Details:</h3>
