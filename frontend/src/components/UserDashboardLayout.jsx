@@ -16,6 +16,7 @@ const UserDashboardLayout = ({ children }) => {
   const [message, setMessage] = useState({ type: '', text: '' });
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [subscriptionStatus, setSubscriptionStatus] = useState(null);
+  const [userBusinesses, setUserBusinesses] = useState([]);
 
   useEffect(() => {
     if (user) {
@@ -41,6 +42,23 @@ const UserDashboardLayout = ({ children }) => {
       }
     };
     loadSubscriptionStatus();
+  }, [user]);
+
+  // Load user businesses for profile navigation
+  useEffect(() => {
+    const loadUserBusinesses = async () => {
+      if (user && (user.role === 'business_owner' || user.role === 'provider')) {
+        try {
+          const response = await api.get('/businesses/my-businesses');
+          if (response.data.businesses && response.data.businesses.length > 0) {
+            setUserBusinesses(response.data.businesses);
+          }
+        } catch (error) {
+          console.error('Error loading user businesses:', error);
+        }
+      }
+    };
+    loadUserBusinesses();
   }, [user]);
 
   const handleLogout = () => {
@@ -242,15 +260,44 @@ const UserDashboardLayout = ({ children }) => {
 
           <div className="sidebar-footer">
             <button
-              onClick={() => {
-                window.open('/', '_blank');
+              onClick={async () => {
                 setMobileMenuOpen(false);
+                try {
+                  // Get user's businesses if not already loaded
+                  let businesses = userBusinesses;
+                  if (businesses.length === 0) {
+                    const response = await api.get('/businesses/my-businesses');
+                    businesses = response.data.businesses || [];
+                    setUserBusinesses(businesses);
+                  }
+
+                  // Navigate to first business profile if available
+                  if (businesses.length > 0) {
+                    const firstBusiness = businesses[0];
+                    window.open(`/businesses/${firstBusiness.id}`, '_blank');
+                  } else {
+                    // If no business, navigate to user profile page
+                    if (user?.id) {
+                      window.open(`/profile/${user.id}`, '_blank');
+                    } else {
+                      window.open('/', '_blank');
+                    }
+                  }
+                } catch (error) {
+                  console.error('Error loading business:', error);
+                  // Fallback to user profile or home
+                  if (user?.id) {
+                    window.open(`/profile/${user.id}`, '_blank');
+                  } else {
+                    window.open('/', '_blank');
+                  }
+                }
               }}
               className="nav-item view-customer-btn"
-              title="View main site as customer"
+              title="View your business profile"
             >
               <i className="fas fa-external-link-alt"></i>
-              <span>View Home Page</span>
+              <span>View Business Profile</span>
             </button>
             <button
               onClick={() => {

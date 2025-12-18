@@ -251,7 +251,7 @@ const BusinessHeader = () => {
             {currentBusiness && (
               <>
                 <Link to={`/businesses/${currentBusiness.id}`} className="header-action-link" target="_blank">
-                  View Home Page
+                  View Business Profile
                 </Link>
                 <Link to="/user-dashboard/reviews" className="header-action-link">
                   See Reviews
