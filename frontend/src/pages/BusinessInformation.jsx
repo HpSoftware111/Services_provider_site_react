@@ -38,6 +38,7 @@ const BusinessInformation = () => {
   const [newSocialPlatform, setNewSocialPlatform] = useState('');
   const [newSocialUrl, setNewSocialUrl] = useState('');
   const [newTag, setNewTag] = useState('');
+  const [uploadingLogo, setUploadingLogo] = useState(false);
 
   const socialPlatforms = [
     { value: 'facebook', label: 'Facebook' },
@@ -117,7 +118,8 @@ const BusinessInformation = () => {
             ? Object.entries(selectedBusiness.socialLinks).map(([platform, url]) => ({ platform, url }))
             : [],
           tags: Array.isArray(selectedBusiness.tags) ? selectedBusiness.tags : [],
-          isPublic: selectedBusiness.isPublic !== undefined ? selectedBusiness.isPublic : true
+          isPublic: selectedBusiness.isPublic !== undefined ? selectedBusiness.isPublic : true,
+          logo: selectedBusiness.logo || ''
         });
 
         // Fetch subcategories if category is selected
@@ -170,7 +172,8 @@ const BusinessInformation = () => {
           ? Object.entries(selectedBusiness.socialLinks).map(([platform, url]) => ({ platform, url }))
           : [],
         tags: Array.isArray(selectedBusiness.tags) ? selectedBusiness.tags : [],
-        isPublic: selectedBusiness.isPublic !== undefined ? selectedBusiness.isPublic : true
+        isPublic: selectedBusiness.isPublic !== undefined ? selectedBusiness.isPublic : true,
+        logo: selectedBusiness.logo || ''
       });
 
       // Fetch subcategories if category is selected
@@ -256,6 +259,41 @@ const BusinessInformation = () => {
     }));
   };
 
+  const handleLogoUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file || !business) return;
+
+    if (!file.type.startsWith('image/')) {
+      setMessage({ type: 'error', text: 'Please select an image file' });
+      return;
+    }
+
+    if (file.size > 2 * 1024 * 1024) {
+      setMessage({ type: 'error', text: 'Image size must be less than 2MB' });
+      return;
+    }
+
+    setUploadingLogo(true);
+    const reader = new FileReader();
+    reader.onloadend = async () => {
+      try {
+        // Update formData with the new logo
+        setFormData(prev => ({ ...prev, logo: reader.result }));
+        setMessage({ type: 'success', text: 'Logo uploaded successfully! It will be saved when you click "Save Changes".' });
+        setTimeout(() => setMessage({ type: '', text: '' }), 3000);
+      } catch (error) {
+        setMessage({ type: 'error', text: 'Failed to process logo' });
+      } finally {
+        setUploadingLogo(false);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleRemoveLogo = () => {
+    setFormData(prev => ({ ...prev, logo: '' }));
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!business) return;
@@ -304,6 +342,9 @@ const BusinessInformation = () => {
       }
       if (formData.isPublic !== undefined) {
         submitData.isPublic = formData.isPublic;
+      }
+      if (formData.logo) {
+        submitData.logo = formData.logo;
       }
 
       await api.put(`/businesses/${business.id}`, submitData);
@@ -362,6 +403,49 @@ const BusinessInformation = () => {
         {/* Basic Information */}
         <div className="form-section">
           <h3 className="section-title">Basic Information</h3>
+          
+          {/* Logo Upload */}
+          <div className="form-field full-width">
+            <label>Business Logo</label>
+            <div className="logo-upload-area">
+              {formData.logo ? (
+                <div className="logo-preview">
+                  <img src={formData.logo} alt="Business Logo" />
+                  <button 
+                    type="button" 
+                    className="remove-logo-btn"
+                    onClick={handleRemoveLogo}
+                    disabled={uploadingLogo}
+                  >
+                    <i className="fas fa-times"></i>
+                  </button>
+                </div>
+              ) : (
+                <label className="upload-placeholder">
+                  {uploadingLogo ? (
+                    <>
+                      <i className="fas fa-spinner fa-spin"></i>
+                      <span>Uploading...</span>
+                    </>
+                  ) : (
+                    <>
+                      <i className="fas fa-cloud-upload-alt"></i>
+                      <span>Click to upload logo</span>
+                      <small>Max 2MB, JPG/PNG</small>
+                    </>
+                  )}
+                  <input 
+                    type="file" 
+                    accept="image/*" 
+                    onChange={handleLogoUpload}
+                    style={{ display: 'none' }}
+                    disabled={uploadingLogo}
+                  />
+                </label>
+              )}
+            </div>
+          </div>
+
           <div className="form-grid">
             <div className="form-field">
               <label>Business Name *</label>

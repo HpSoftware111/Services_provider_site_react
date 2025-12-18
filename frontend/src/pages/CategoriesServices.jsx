@@ -79,6 +79,14 @@ const CategoriesServices = () => {
     <div className="categories-services-page">
       <h1 className="page-title">Categories & Services</h1>
 
+      {/* Informational Message */}
+      <div className="info-banner">
+        <i className="fas fa-info-circle"></i>
+        <p>
+          Let customers know what your business offers by selecting categories & services. This will help customers find your business, and help you generate leads.
+        </p>
+      </div>
+
       {/* Category Selection */}
       <div className="section-card">
         <h3 className="section-title">Business Category</h3>

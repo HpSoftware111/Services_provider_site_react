@@ -87,8 +87,13 @@ const MyBusiness = () => {
     }
   };
 
-  const getFirstImage = (business) => {
-    // Handle images array
+  const getDisplayImage = (business) => {
+    // Prioritize logo image
+    if (business.logo) {
+      return business.logo;
+    }
+
+    // Fall back to first image from images array if no logo
     let images = [];
     if (business.images) {
       if (Array.isArray(business.images)) {
@@ -109,11 +114,6 @@ const MyBusiness = () => {
     // Return first image if available
     if (images.length > 0 && images[0]) {
       return images[0];
-    }
-
-    // Fall back to logo
-    if (business.logo) {
-      return business.logo;
     }
 
     return null;
@@ -221,12 +221,12 @@ const MyBusiness = () => {
         <div className={`businesses-grid ${businesses.length === 1 ? 'single-business' : ''}`}>
           {businesses.map(business => {
             const status = getStatusBadge(business);
-            const firstImage = getFirstImage(business);
+            const displayImage = getDisplayImage(business);
             return (
               <div key={business.id} className={`business-card ${businesses.length === 1 ? 'single-card' : ''}`}>
                 <div className="business-card-image">
-                  {firstImage ? (
-                    <img src={firstImage} alt={business.name} />
+                  {displayImage ? (
+                    <img src={displayImage} alt={business.name} />
                   ) : (
                     <div className="business-card-placeholder">
                       <i className="fas fa-building"></i>
