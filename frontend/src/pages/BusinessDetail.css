@@ -25,7 +25,9 @@
 }
 
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .business-detail-loading p {
@@ -224,6 +226,7 @@
 }
 
 .rating-value {
+  color: #ffffff !important;
   font-size: 24px;
 }
 
@@ -232,7 +235,7 @@
 }
 
 .rating-count {
-  color: rgba(255, 255, 255, 0.9);
+  color: rgba(255, 255, 255, 0.9) !important;
   font-weight: 500;
 }
 
@@ -257,7 +260,7 @@
   color: #d97706;
 }
 
-.claim-banner-content > div {
+.claim-banner-content>div {
   flex: 1;
   min-width: 250px;
 }
@@ -352,7 +355,7 @@
   color: #64748b;
   font-weight: 500;
   background: #f1f5f9;
-  padding: 4px 12px;
+  padding: 4px 12px !important;
   border-radius: 12px;
 }
 

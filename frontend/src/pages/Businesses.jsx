@@ -839,7 +839,7 @@ const Businesses = () => {
                       <h3>{business.name}</h3>
                       <div className="rating">
                         <div className="stars golden">{renderStars(business.ratingAverage)}</div>
-                        <span className="rating-value">
+                        <span className="rating-value text-white">
                           {(parseFloat(business.ratingAverage) || 0).toFixed(1)}
                         </span>
                         <span className="rating-count">({business.ratingCount || 0} reviews)</span>

@@ -250,7 +250,7 @@ const UserDashboardLayout = ({ children }) => {
               title="View main site as customer"
             >
               <i className="fas fa-external-link-alt"></i>
-              <span>View as Customer</span>
+              <span>View Home Page</span>
             </button>
             <button
               onClick={() => {

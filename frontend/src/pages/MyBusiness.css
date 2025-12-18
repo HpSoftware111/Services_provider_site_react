@@ -9,8 +9,8 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 32px;
-  padding-bottom: 20px;
+  margin-bottom: 24px;
+  padding-bottom: 16px;
   border-bottom: 1px solid #e1e8ed;
 }
 
@@ -85,13 +85,102 @@
   font-size: 16px;
 }
 
+.subscription-status-display {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 20px;
+  background: #ffffff;
+  border: 1px solid #e1e8ed;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  white-space: nowrap;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.subscription-status-display:hover {
+  background: #f8f9fa;
+  border-color: #d1d9e0;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+  transform: translateY(-1px);
+}
+
+.subscription-status-display i {
+  font-size: 20px;
+  color: #10b981;
+}
+
+.subscription-status-display.status-expired i {
+  color: #f59e0b;
+}
+
+.subscription-status-display.status-cancelled i,
+.subscription-status-display.status-inactive i {
+  color: #6b7280;
+}
+
+.subscription-status-display.status-none i {
+  color: #667eea;
+}
+
+.subscription-status-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.subscription-plan-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: #2c3e50;
+  line-height: 1.2;
+}
+
+.subscription-status-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  display: inline-block;
+  width: fit-content;
+}
+
+.subscription-status-badge.status-active {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.subscription-status-badge.status-expired {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.subscription-status-badge.status-cancelled,
+.subscription-status-badge.status-inactive {
+  background: #f3f4f6;
+  color: #4b5563;
+}
+
+.subscription-status-badge.status-pending {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.subscription-status-badge.status-none {
+  background: #e0e7ff;
+  color: #4338ca;
+}
+
 .alert {
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 10px 14px;
   border-radius: 6px;
-  margin-bottom: 20px;
+  margin-bottom: 16px;
   font-size: 12px;
   position: relative;
   scroll-margin-top: 20px;
@@ -179,6 +268,18 @@
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
   gap: 24px;
+  max-width: 100%;
+}
+
+/* Single business layout - make it more prominent and use space better */
+.businesses-grid.single-business {
+  grid-template-columns: 1fr;
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.businesses-grid.single-business .business-card {
+  max-width: 100%;
 }
 
 .business-card {
@@ -193,6 +294,26 @@
   position: relative;
 }
 
+/* Single business card - make it larger and more detailed */
+.business-card.single-card {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  max-height: none;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.business-card.single-card .business-card-image {
+  height: 100%;
+  min-height: 320px;
+}
+
+.business-card.single-card .business-card-content {
+  padding: 28px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
 .business-card:hover {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
   border-color: #d1d9e0;
@@ -204,6 +325,11 @@
   height: 180px;
   overflow: hidden;
   background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+}
+
+.business-card.single-card .business-card-image {
+  height: 100%;
+  min-height: 320px;
 }
 
 .business-card-image img {
@@ -273,6 +399,11 @@
   letter-spacing: -0.1px;
 }
 
+.business-card.single-card .business-card-name {
+  font-size: 24px;
+  margin-bottom: 16px;
+}
+
 .business-card-description {
   font-size: 13px;
   color: #5a6c7d;
@@ -284,12 +415,27 @@
   overflow: hidden;
 }
 
+.business-card.single-card .business-card-description {
+  font-size: 15px;
+  line-height: 1.7;
+  -webkit-line-clamp: unset;
+  display: block;
+  margin-bottom: 20px;
+  flex: 1;
+}
+
 .business-card-stats {
   display: flex;
   gap: 20px;
   padding-top: 16px;
   border-top: 1px solid #f0f3f6;
   margin-bottom: 16px;
+}
+
+.business-card.single-card .business-card-stats {
+  gap: 32px;
+  padding-top: 20px;
+  margin-bottom: 20px;
 }
 
 .stat-item {
@@ -303,6 +449,16 @@
 .stat-item i {
   color: #bdc3c7;
   font-size: 11px;
+}
+
+.business-card.single-card .stat-item {
+  font-size: 14px;
+  gap: 6px;
+}
+
+.business-card.single-card .stat-item i {
+  font-size: 14px;
+  color: #667eea;
 }
 
 .rejection-notice {
@@ -345,6 +501,13 @@
   transform: translateY(0);
 }
 
+/* Always show actions for single business card */
+.business-card-actions.always-visible {
+  opacity: 1;
+  transform: translateY(0);
+  margin-top: auto;
+}
+
 .action-btn {
   flex: 1;
   padding: 8px 12px;
@@ -360,6 +523,11 @@
   color: #5a6c7d;
   gap: 6px;
   font-weight: 500;
+}
+
+.business-card.single-card .action-btn {
+  padding: 10px 16px;
+  font-size: 13px;
 }
 
 .action-btn i {
@@ -405,5 +573,22 @@
   .businesses-grid {
     grid-template-columns: 1fr;
     gap: 20px;
+  }
+
+  .business-card.single-card {
+    grid-template-columns: 1fr;
+  }
+
+  .business-card.single-card .business-card-image {
+    height: 240px;
+    min-height: 240px;
+  }
+
+  .business-card.single-card .business-card-content {
+    padding: 20px;
+  }
+
+  .business-card.single-card .business-card-name {
+    font-size: 20px;
   }
 }

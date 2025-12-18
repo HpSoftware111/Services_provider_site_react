@@ -27,7 +27,7 @@ const AdminLayout = ({ children }) => {
     { path: '/admin/work-orders', icon: 'fas fa-tasks', label: 'Work Orders' },
     { path: '/admin/providers', icon: 'fas fa-users-cog', label: 'Providers' },
     { path: '/admin/blogs', icon: 'fas fa-blog', label: 'Blogs' },
-    { path: '/admin/contacts', icon: 'fas fa-envelope', label: 'Contacts' },
+    { path: '/admin/contacts', icon: 'fas fa-envelope', label: 'Support Tickets' },
     { path: '/admin/activities', icon: 'fas fa-history', label: 'Activities' },
   ];
 

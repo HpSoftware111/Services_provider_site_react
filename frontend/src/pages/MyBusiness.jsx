@@ -10,10 +10,12 @@ const MyBusiness = () => {
   const [businesses, setBusinesses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState({ type: '', text: '' });
+  const [subscriptionStatus, setSubscriptionStatus] = useState(null);
   const messageRef = useRef(null);
 
   useEffect(() => {
     fetchBusinesses();
+    fetchSubscriptionStatus();
   }, []);
 
   // Scroll error into view when it appears
@@ -37,6 +39,20 @@ const MyBusiness = () => {
       setMessage({ type: 'error', text: 'Failed to load businesses' });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchSubscriptionStatus = async () => {
+    try {
+      const response = await api.get('/subscriptions/my-subscription');
+      if (response.data.subscription) {
+        setSubscriptionStatus(response.data.subscription);
+      } else {
+        setSubscriptionStatus(null);
+      }
+    } catch (error) {
+      console.error('Error loading subscription status:', error);
+      setSubscriptionStatus(null);
     }
   };
 
@@ -88,12 +104,21 @@ const MyBusiness = () => {
         <h1 className="page-title">My Businesses</h1>
         <div className="header-actions">
           {businesses.length > 0 && (
-            <button 
-              className="subscription-btn" 
+            <div 
+              className={`subscription-status-display ${subscriptionStatus ? `status-${subscriptionStatus.status?.toLowerCase() || 'unknown'}` : 'status-none'}`}
               onClick={() => navigate('/user-dashboard/subscriptions')}
+              title="Click to manage subscription"
             >
-              <i className="fas fa-crown"></i> Subscription Plans
-            </button>
+              <i className={`fas fa-${subscriptionStatus ? (subscriptionStatus.status === 'ACTIVE' ? 'check-circle' : subscriptionStatus.status === 'EXPIRED' ? 'exclamation-triangle' : 'clock') : 'crown'}`}></i>
+              <div className="subscription-status-info">
+                <span className="subscription-plan-name">
+                  {subscriptionStatus?.plan?.name || 'No Active Subscription'}
+                </span>
+                <span className={`subscription-status-badge ${subscriptionStatus ? `status-${subscriptionStatus.status?.toLowerCase() || 'unknown'}` : 'status-none'}`}>
+                  {subscriptionStatus?.status || 'Free Plan'}
+                </span>
+              </div>
+            </div>
           )}
           {businesses.length === 0 && (
             <button className="add-business-btn" onClick={() => navigate('/add-business')}>
@@ -119,15 +144,15 @@ const MyBusiness = () => {
           background: '#f0f9ff',
           border: '1px solid #bae6fd',
           borderRadius: '8px',
-          padding: '20px',
-          marginBottom: '20px',
-          fontSize: '15px',
+          padding: '16px 20px',
+          marginBottom: '16px',
+          fontSize: '14px',
           color: '#1e40af',
           display: 'flex',
           alignItems: 'flex-start',
           gap: '12px'
         }}>
-          <i className="fas fa-info-circle" style={{ fontSize: '20px', marginTop: '2px', flexShrink: 0 }}></i>
+          <i className="fas fa-info-circle" style={{ fontSize: '18px', marginTop: '2px', flexShrink: 0 }}></i>
           <div>
             <p style={{ margin: 0, fontWeight: '600', marginBottom: '4px' }}>
               Thank you for claiming your business.
@@ -149,11 +174,11 @@ const MyBusiness = () => {
           </button>
         </div>
       ) : (
-        <div className="businesses-grid">
+        <div className={`businesses-grid ${businesses.length === 1 ? 'single-business' : ''}`}>
           {businesses.map(business => {
             const status = getStatusBadge(business);
             return (
-              <div key={business.id} className="business-card">
+              <div key={business.id} className={`business-card ${businesses.length === 1 ? 'single-card' : ''}`}>
                 <div className="business-card-image">
                   {business.logo ? (
                     <img src={business.logo} alt={business.name} />
@@ -170,7 +195,9 @@ const MyBusiness = () => {
                   <h3 className="business-card-name">{business.name}</h3>
                   {business.description && (
                     <p className="business-card-description">
-                      {business.description.length > 120
+                      {businesses.length === 1 
+                        ? business.description
+                        : business.description.length > 120
                         ? `${business.description.substring(0, 120)}...`
                         : business.description}
                     </p>
@@ -195,7 +222,7 @@ const MyBusiness = () => {
                       <span>{business.rejectionReason}</span>
                     </div>
                   )}
-                  <div className="business-card-actions">
+                  <div className={`business-card-actions ${businesses.length === 1 ? 'always-visible' : ''}`}>
                     <button className="action-btn view" onClick={() => handleView(business.id)}>
                       <i className="fas fa-eye"></i> View
                     </button>

@@ -269,9 +269,9 @@ const BusinessDetail = () => {
                   <span className="stars-empty">{'☆'.repeat(5 - Math.floor(rating))}</span>
                 </div>
                 <div className="rating-details">
-                  <span className="rating-value">{rating.toFixed(1)}</span>
+                  <span className="rating-value text-white">{rating.toFixed(1)}</span>
                   <span className="rating-separator">•</span>
-                  <span className="rating-count">{reviewCount} {reviewCount === 1 ? 'review' : 'reviews'}</span>
+                  <span className="rating-count text-white">{reviewCount} {reviewCount === 1 ? 'review' : 'reviews'}</span>
                 </div>
               </div>
             </div>
