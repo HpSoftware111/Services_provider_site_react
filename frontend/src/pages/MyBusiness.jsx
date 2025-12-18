@@ -87,6 +87,38 @@ const MyBusiness = () => {
     }
   };
 
+  const getFirstImage = (business) => {
+    // Handle images array
+    let images = [];
+    if (business.images) {
+      if (Array.isArray(business.images)) {
+        images = business.images;
+      } else if (typeof business.images === 'string') {
+        try {
+          const parsed = JSON.parse(business.images);
+          if (Array.isArray(parsed)) {
+            images = parsed;
+          }
+        } catch (e) {
+          // If parsing fails, treat as single image URL
+          images = [business.images];
+        }
+      }
+    }
+
+    // Return first image if available
+    if (images.length > 0 && images[0]) {
+      return images[0];
+    }
+
+    // Fall back to logo
+    if (business.logo) {
+      return business.logo;
+    }
+
+    return null;
+  };
+
   if (loading) {
     return (
       <div className="my-business-page">
@@ -104,7 +136,7 @@ const MyBusiness = () => {
         <h1 className="page-title">My Businesses</h1>
         <div className="header-actions">
           {businesses.length > 0 && (
-            <div 
+            <div
               className={`subscription-status-display ${subscriptionStatus ? `status-${subscriptionStatus.status?.toLowerCase() || 'unknown'}` : 'status-none'}`}
               onClick={() => navigate('/user-dashboard/subscriptions')}
               title="Click to manage subscription"
@@ -117,6 +149,18 @@ const MyBusiness = () => {
                 <span className={`subscription-status-badge ${subscriptionStatus ? `status-${subscriptionStatus.status?.toLowerCase() || 'unknown'}` : 'status-none'}`}>
                   {subscriptionStatus?.status || 'Free Plan'}
                 </span>
+                {/* Show expiry date if subscription is expired and expiry date exists */}
+                {subscriptionStatus?.status === 'EXPIRED' && subscriptionStatus?.expiredAt && (
+                  <span className="subscription-expiry-date" style={{ color: '#e74c3c', fontSize: '12px', marginTop: '4px', display: 'block' }}>
+                    Expired on {new Date(subscriptionStatus.expiredAt).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}
+                  </span>
+                )}
+                {/* Or show upcoming expiry if available */}
+                {subscriptionStatus?.status === 'ACTIVE' && subscriptionStatus?.expiredAt && (
+                  <span className="subscription-expiry-date" style={{ color: '#636363', fontSize: '12px', marginTop: '4px', display: 'block' }}>
+                    Expires on {new Date(subscriptionStatus.expiredAt).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}
+                  </span>
+                )}
               </div>
             </div>
           )}
@@ -177,11 +221,12 @@ const MyBusiness = () => {
         <div className={`businesses-grid ${businesses.length === 1 ? 'single-business' : ''}`}>
           {businesses.map(business => {
             const status = getStatusBadge(business);
+            const firstImage = getFirstImage(business);
             return (
               <div key={business.id} className={`business-card ${businesses.length === 1 ? 'single-card' : ''}`}>
                 <div className="business-card-image">
-                  {business.logo ? (
-                    <img src={business.logo} alt={business.name} />
+                  {firstImage ? (
+                    <img src={firstImage} alt={business.name} />
                   ) : (
                     <div className="business-card-placeholder">
                       <i className="fas fa-building"></i>
@@ -195,11 +240,11 @@ const MyBusiness = () => {
                   <h3 className="business-card-name">{business.name}</h3>
                   {business.description && (
                     <p className="business-card-description">
-                      {businesses.length === 1 
+                      {businesses.length === 1
                         ? business.description
                         : business.description.length > 120
-                        ? `${business.description.substring(0, 120)}...`
-                        : business.description}
+                          ? `${business.description.substring(0, 120)}...`
+                          : business.description}
                     </p>
                   )}
                   <div className="business-card-stats">

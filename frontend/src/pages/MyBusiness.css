@@ -197,9 +197,11 @@
     opacity: 0;
     transform: translateY(-10px) scale(0.95);
   }
+
   50% {
     transform: translateY(0) scale(1.02);
   }
+
   100% {
     opacity: 1;
     transform: translateY(0) scale(1);
@@ -274,7 +276,7 @@
 /* Single business layout - make it more prominent and use space better */
 .businesses-grid.single-business {
   grid-template-columns: 1fr;
-  max-width: 900px;
+
   margin: 0 auto;
 }
 

@@ -232,6 +232,33 @@
   margin: 8px 0 0 0;
   opacity: 0.9;
   font-size: 14px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.subscription-expiry-date {
+  margin: 8px 0 0 0;
+  opacity: 0.95;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 500;
+}
+
+.subscription-expiry-date strong {
+  font-weight: 600;
+  opacity: 1;
+}
+
+.subscription-period.expired {
+  color: #ef4444;
+  font-weight: 500;
+}
+
+.subscription-period i {
+  font-size: 14px;
 }
 
 .subscription-tier {
@@ -256,7 +283,7 @@
 
 .status-badge.status-active {
   background-color: rgba(16, 185, 129, 0.2);
-  color: #059669;
+  color: #ca0000;
 }
 
 .status-badge.status-cancelled {
@@ -473,6 +500,24 @@
 .btn-subscribe:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+.btn-subscribe.btn-upgrade {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+}
+
+.btn-subscribe.btn-upgrade:hover:not(:disabled) {
+  box-shadow: 0 6px 16px rgba(16, 185, 129, 0.4);
+}
+
+.btn-subscribe.btn-downgrade {
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+  box-shadow: 0 4px 12px rgba(245, 158, 11, 0.3);
+}
+
+.btn-subscribe.btn-downgrade:hover:not(:disabled) {
+  box-shadow: 0 6px 16px rgba(245, 158, 11, 0.4);
 }
 
 .btn-current-plan {

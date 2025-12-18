@@ -13,7 +13,7 @@ const Subscriptions = () => {
   const [message, setMessage] = useState({ type: '', text: '' });
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState(null);
-  const [viewMode, setViewMode] = useState('all'); // 'all', 'monthly', 'yearly'
+  const [viewMode, setViewMode] = useState('monthly'); // 'monthly', 'yearly'
   const [error, setError] = useState(null);
 
   useEffect(() => {
@@ -241,11 +241,80 @@ const Subscriptions = () => {
     );
   }
 
+  // Helper function to determine tier hierarchy for upgrade/downgrade comparison
+  const getTierLevel = (tier) => {
+    if (!tier) return 0;
+    const tierUpper = String(tier).toUpperCase().trim();
+    if (tierUpper === 'BASIC') return 1;
+    if (tierUpper === 'PRO') return 3; // Pro is highest tier
+    if (tierUpper === 'PREMIUM') return 2;
+    return 0;
+  };
+
+  // Helper function to get button text based on subscription status
+  const getButtonText = (plan) => {
+    if (!plan) return 'Subscribe';
+
+    const isCurrentPlan = currentSubscription?.subscriptionPlanId === plan.id;
+    const isActive = currentSubscription?.status === 'ACTIVE' && isCurrentPlan;
+
+    // If this is the current active plan, show "Current Plan"
+    if (isActive) {
+      return 'Current Plan';
+    }
+
+    // If this is the current plan but not active, show "Reactivate"
+    if (isCurrentPlan && currentSubscription?.status !== 'ACTIVE') {
+      return 'Reactivate';
+    }
+
+    // Compare tiers if there's an active subscription
+    if (currentSubscription?.status === 'ACTIVE' && currentSubscription?.plan) {
+      const currentTierLevel = getTierLevel(currentSubscription.plan.tier);
+      const planTierLevel = getTierLevel(plan.tier);
+
+      // If same tier but different plan (e.g., monthly vs yearly), compare by price
+      if (planTierLevel === currentTierLevel && planTierLevel > 0) {
+        const currentPrice = parseFloat(currentSubscription.plan.price || 0);
+        const planPrice = parseFloat(plan.price || 0);
+
+        // If same billing cycle, it's the same plan
+        if (currentSubscription.plan.billingCycle === plan.billingCycle) {
+          return 'Current Plan';
+        }
+
+        // Different billing cycle but same tier - compare prices
+        // For yearly vs monthly, we need to normalize (yearly is usually cheaper per month)
+        if (planPrice > currentPrice) {
+          return 'Upgrade';
+        } else if (planPrice < currentPrice) {
+          return 'Downgrade';
+        }
+      }
+
+      // Different tiers - compare tier levels
+      // Special case: If current is Premium and plan is Pro, it's an Upgrade
+      if (currentSubscription.plan.tier?.toUpperCase() === 'PREMIUM' && plan.tier?.toUpperCase() === 'PRO') {
+        return 'Upgrade';
+      }
+
+      if (planTierLevel > currentTierLevel) {
+        return 'Upgrade';
+      } else if (planTierLevel < currentTierLevel) {
+        return 'Downgrade';
+      }
+    }
+
+    // Default to Subscribe for new subscriptions
+    return 'Subscribe';
+  };
+
   // Helper function to render a plan card
   const renderPlanCard = (plan) => {
     const isCurrentPlan = currentSubscription?.subscriptionPlanId === plan.id;
     const isActive = currentSubscription?.status === 'ACTIVE' && isCurrentPlan;
     const isMonthly = plan.billingCycle?.toUpperCase() === 'MONTHLY';
+    const buttonText = getButtonText(plan);
 
     return (
       <div
@@ -328,7 +397,7 @@ const Subscriptions = () => {
           </ul>
         </div>
         <div className="plan-actions">
-          {isActive ? (
+          {buttonText === 'Current Plan' ? (
             <button className="btn-current-plan" disabled>
               <i className="fas fa-check-circle"></i> Current Plan
             </button>
@@ -336,7 +405,7 @@ const Subscriptions = () => {
             <button
               onClick={() => handleSubscribe(plan.id)}
               disabled={subscribing}
-              className="btn-subscribe"
+              className={`btn-subscribe ${buttonText === 'Upgrade' ? 'btn-upgrade' : buttonText === 'Downgrade' ? 'btn-downgrade' : ''}`}
             >
               {subscribing ? (
                 <>
@@ -344,7 +413,15 @@ const Subscriptions = () => {
                 </>
               ) : (
                 <>
-                  <i className="fas fa-arrow-right"></i> {isCurrentPlan ? 'Reactivate' : 'Subscribe'}
+                  {buttonText === 'Upgrade' ? (
+                    <><i className="fas fa-arrow-up"></i> Upgrade</>
+                  ) : buttonText === 'Downgrade' ? (
+                    <><i className="fas fa-arrow-down"></i> Downgrade</>
+                  ) : buttonText === 'Reactivate' ? (
+                    <><i className="fas fa-redo"></i> Reactivate</>
+                  ) : (
+                    <><i className="fas fa-arrow-right"></i> Subscribe</>
+                  )}
                 </>
               )}
             </button>
@@ -369,22 +446,10 @@ const Subscriptions = () => {
               <div className="billing-cycle-toggle">
                 <button
                   type="button"
-                  className={`toggle-btn ${viewMode === 'all' ? 'active' : ''}`}
-                  onClick={() => {
-                    setViewMode('all');
-                    console.log('Switched to All Plans view');
-                  }}
-                >
-                  <i className="fas fa-list"></i>
-                  <span>All Plans</span>
-                </button>
-                <button
-                  type="button"
                   className={`toggle-btn ${viewMode === 'monthly' ? 'active' : ''} ${monthlyPlans.length === 0 ? 'no-plans' : ''}`}
                   onClick={() => {
                     if (monthlyPlans.length > 0) {
                       setViewMode('monthly');
-                      console.log('Switched to Monthly Plans view');
                     } else {
                       setMessage({
                         type: 'error',
@@ -410,13 +475,11 @@ const Subscriptions = () => {
                   onClick={() => {
                     if (yearlyPlans.length > 0) {
                       setViewMode('yearly');
-                      console.log('Switched to Annual Plans view', yearlyPlans);
                     } else {
                       setMessage({
                         type: 'error',
                         text: 'No annual plans available at the moment. Annual plans will be available soon!'
                       });
-                      console.log('No annual plans found. Plans data:', plans);
                     }
                   }}
                   title={yearlyPlans.length === 0 ? 'No annual plans available' : `View ${yearlyPlans.length} annual plan${yearlyPlans.length !== 1 ? 's' : ''}`}
@@ -449,7 +512,7 @@ const Subscriptions = () => {
         {currentSubscription && (
           <div className="current-subscription">
             {currentSubscription.status === 'EXPIRED' && (
-              <div className="alert alert-warning" style={{ 
+              <div className="alert alert-warning" style={{
                 marginBottom: '20px',
                 backgroundColor: '#fef3c7',
                 border: '2px solid #f59e0b',
@@ -465,7 +528,7 @@ const Subscriptions = () => {
                     Your subscription has expired
                   </strong>
                   <span style={{ color: '#78350f' }}>
-                    {currentSubscription.currentPeriodEnd 
+                    {currentSubscription.currentPeriodEnd
                       ? `Expired on ${new Date(currentSubscription.currentPeriodEnd).toLocaleDateString()}. `
                       : ''}
                     Please renew your subscription to continue accessing premium features.
@@ -486,9 +549,24 @@ const Subscriptions = () => {
                   <i className="fas fa-crown"></i> Tier: {currentSubscription.plan?.tier || 'N/A'}
                 </p>
                 {currentSubscription.currentPeriodEnd && (
-                  <p className="subscription-period">
-                    {currentSubscription.status === 'EXPIRED' ? 'Expired: ' : 'Renews: '}
-                    {new Date(currentSubscription.currentPeriodEnd).toLocaleDateString()}
+                  <p className={`subscription-period ${currentSubscription.status === 'EXPIRED' ? 'expired' : ''}`}>
+                    {currentSubscription.status === 'EXPIRED' ? (
+                      <>
+                        <i className="fas fa-calendar-times"></i> Expired on: {new Date(currentSubscription.currentPeriodEnd).toLocaleDateString(undefined, {
+                          year: 'numeric',
+                          month: 'long',
+                          day: 'numeric'
+                        })}
+                      </>
+                    ) : (
+                      <>
+                        Renews: {new Date(currentSubscription.currentPeriodEnd).toLocaleDateString(undefined, {
+                          year: 'numeric',
+                          month: 'long',
+                          day: 'numeric'
+                        })}
+                      </>
+                    )}
                   </p>
                 )}
                 {currentSubscription.status && (
@@ -496,6 +574,27 @@ const Subscriptions = () => {
                     Status: <span className={`status-badge status-${currentSubscription.status.toLowerCase()}`}>
                       {currentSubscription.status}
                     </span>
+                  </p>
+                )}
+                {/* Expiry Date - Always show if available */}
+                {(currentSubscription.expiredAt || currentSubscription.currentPeriodEnd) && (
+                  <p className="subscription-expiry-date">
+                    <i className="fas fa-calendar-times"></i> Expiry Date: {' '}
+                    <strong>
+                      {currentSubscription.expiredAt
+                        ? new Date(currentSubscription.expiredAt).toLocaleDateString(undefined, {
+                          year: 'numeric',
+                          month: 'long',
+                          day: 'numeric'
+                        })
+                        : currentSubscription.currentPeriodEnd
+                          ? new Date(currentSubscription.currentPeriodEnd).toLocaleDateString(undefined, {
+                            year: 'numeric',
+                            month: 'long',
+                            day: 'numeric'
+                          })
+                          : 'N/A'}
+                    </strong>
                   </p>
                 )}
               </div>
@@ -511,7 +610,7 @@ const Subscriptions = () => {
         )}
 
         {/* Monthly Plans Section */}
-        {monthlyPlans && monthlyPlans.length > 0 && (viewMode === 'all' || viewMode === 'monthly') && (
+        {monthlyPlans && monthlyPlans.length > 0 && viewMode === 'monthly' && (
           <div className="plans-section">
             <div className="plans-section-header">
               <h2>
@@ -526,7 +625,7 @@ const Subscriptions = () => {
         )}
 
         {/* Annual Plans Section */}
-        {yearlyPlans && yearlyPlans.length > 0 && (viewMode === 'all' || viewMode === 'yearly') && (
+        {yearlyPlans && yearlyPlans.length > 0 && viewMode === 'yearly' && (
           <div className="plans-section">
             <div className="plans-section-header">
               <h2>
