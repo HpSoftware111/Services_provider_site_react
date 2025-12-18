@@ -230,7 +230,7 @@ const Home = () => {
       </section>
 
       {/* Business Profiles Section */}
-      {profiles.length > 0 && (
+      {/* {profiles.length > 0 && (
         <section className="business-profiles">
           <div className="container">
             <div className="section-header-with-action">
@@ -278,7 +278,7 @@ const Home = () => {
             )}
           </div>
         </section>
-      )}
+      )} */}
 
       {/* Top Businesses */}
       <section className="business-listings">
@@ -299,7 +299,7 @@ const Home = () => {
             <div className="loading"><div className="spinner"></div></div>
           ) : businesses.length > 0 ? (
             <div className="carousel-container">
-              <button 
+              <button
                 className="carousel-btn carousel-btn-prev"
                 onClick={() => {
                   const cardWidth = carouselRef.current?.querySelector('.carousel-card')?.offsetWidth || 325;
@@ -316,7 +316,7 @@ const Home = () => {
               >
                 <i className="fas fa-chevron-left"></i>
               </button>
-              
+
               <div className="carousel-wrapper" ref={carouselRef}>
                 <div className="carousel-track">
                   {businesses.map((business) => (
@@ -354,7 +354,7 @@ const Home = () => {
                 </div>
               </div>
 
-              <button 
+              <button
                 className="carousel-btn carousel-btn-next"
                 onClick={() => {
                   const cardWidth = carouselRef.current?.querySelector('.carousel-card')?.offsetWidth || 325;
