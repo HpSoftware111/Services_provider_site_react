@@ -4,6 +4,7 @@ const { protect } = require('../middleware/auth');
 const PhoneVerification = require('../models/PhoneVerification');
 const User = require('../models/User');
 const sendEmail = require('../utils/sendEmail');
+const sendSMS = require('../utils/sendSMS');
 
 // Generate a 6-digit verification code
 function generateVerificationCode() {
@@ -67,8 +68,34 @@ router.post('/send-code', protect, async (req, res) => {
       expiresAt: expiresAt
     });
 
-    // Send verification code via email (since SMS requires Twilio setup)
-    // In production, you can integrate Twilio here for SMS
+    // Send verification code via SMS (Plivo) first, fallback to email
+    let smsSent = false;
+    let emailSent = false;
+
+    // Try to send SMS via Plivo
+    try {
+      const smsMessage = `Your Home Services verification code is: ${code}. This code expires in 10 minutes.`;
+      const smsResult = await sendSMS(phone, smsMessage);
+
+      if (smsResult.success) {
+        smsSent = true;
+        console.log(`✅ Verification code sent via SMS to ${phone}. Message UUID: ${smsResult.messageUuid || 'N/A'}`);
+      } else {
+        console.warn(`⚠️  SMS sending failed: ${smsResult.error || 'Unknown error'}`);
+        console.warn(`   Error details: ${smsResult.details || 'No additional details'}`);
+        console.warn(`   Phone number attempted: ${phone}`);
+        // Continue to email fallback
+      }
+    } catch (smsError) {
+      console.error('❌ Error sending SMS:', smsError);
+      console.error('   Error code:', smsError.code);
+      console.error('   Error message:', smsError.message);
+      console.error('   Phone number attempted:', phone);
+      // Continue to email fallback
+    }
+
+    // Send verification code via email as fallback or backup
+    // This ensures users always receive the code even if SMS fails
     try {
       await sendEmail({
         to: user.email,
@@ -95,6 +122,7 @@ router.post('/send-code', protect, async (req, res) => {
               <p style="color: #333; font-size: 16px; line-height: 1.6;">
                 This code will expire in 10 minutes.
               </p>
+              ${smsSent ? '<p style="color: #27ae60; font-size: 14px; margin-top: 15px;">✓ This code has also been sent to your phone via SMS.</p>' : ''}
               <p style="color: #7f8c8d; font-size: 14px; margin-top: 30px; text-align: center;">
                 If you didn't request this code, please ignore this email.
               </p>
@@ -102,14 +130,24 @@ router.post('/send-code', protect, async (req, res) => {
           </div>
         `
       });
+      emailSent = true;
+      console.log(`✅ Verification code sent via email to ${user.email}`);
     } catch (emailError) {
-      console.error('Failed to send verification email:', emailError);
+      console.error('❌ Failed to send verification email:', emailError);
       // Don't fail the request if email fails - code is still generated
+    }
+
+    // Log delivery status
+    if (!smsSent && !emailSent) {
+      console.warn('⚠️  Warning: Neither SMS nor email was sent successfully. Code is still generated and stored.');
     }
 
     res.json({
       success: true,
       message: 'Verification code sent successfully',
+      smsSent: smsSent,
+      emailSent: emailSent,
+      deliveryMethod: smsSent ? 'SMS' : (emailSent ? 'email' : 'none'),
       // In development, return code for testing (remove in production)
       ...(process.env.NODE_ENV === 'development' && { code: code })
     });

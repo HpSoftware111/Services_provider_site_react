@@ -42,7 +42,8 @@ const ServiceRequest = () => {
         sending: false,
         verifying: false,
         error: '',
-        info: ''
+        info: '',
+        smsSent: false
     });
     const [formData, setFormData] = useState({
         categoryId: '',
@@ -94,7 +95,7 @@ const ServiceRequest = () => {
                 verified,
                 error: '',
                 info: verified
-                    ? 'Your phone number is verified.'
+                    ? 'Please check verfication code'
                     : 'Your phone number is not verified. Please request a code and verify it before submitting.'
             }));
         } catch (err) {
@@ -370,22 +371,38 @@ const ServiceRequest = () => {
         }));
 
         try {
-            await api.post('/phone-verification/send-code', { phone });
+            const response = await api.post('/phone-verification/send-code', { phone });
+            const { smsSent, emailSent, deliveryMethod } = response.data || {};
+
+            let infoMessage = 'Verification code sent. ';
+            if (smsSent && emailSent) {
+                infoMessage += 'Please check your phone (SMS) and email for the 6-digit code.';
+            } else if (smsSent) {
+                infoMessage += 'Please check your phone (SMS) for the 6-digit code.';
+            } else if (emailSent) {
+                infoMessage += 'SMS delivery failed. Please check your email for the 6-digit code.';
+            } else {
+                infoMessage += 'Please check your email for the 6-digit code.';
+            }
+
             setPhoneVerification(prev => ({
                 ...prev,
                 sending: false,
                 checked: false,
                 verified: false,
-                info: 'Verification code sent. Please check your email or SMS and enter the 6-digit code below.',
-                error: ''
+                info: infoMessage,
+                error: smsSent ? '' : 'SMS could not be sent. Please check your email for the verification code, or verify your Twilio configuration.',
+                smsSent: smsSent || false
             }));
         } catch (err) {
             console.error('Error sending verification code:', err);
+            const errorMessage = err.response?.data?.error || 'Failed to send verification code. Please try again.';
             setPhoneVerification(prev => ({
                 ...prev,
                 sending: false,
-                error: err.response?.data?.error || 'Failed to send verification code. Please try again.',
-                info: ''
+                error: errorMessage,
+                info: 'If SMS failed, please check your email for the verification code.',
+                smsSent: false
             }));
         }
     };
@@ -1199,7 +1216,7 @@ const ServiceRequest = () => {
                                 name="customerPhone"
                                 value={phoneVerification.phone}
                                 onChange={handlePhoneChange}
-                                placeholder="Enter your mobile number"
+                                placeholder="15551234567"
                                 disabled={phoneVerification.sending || phoneVerification.verifying}
                             />
                             {phoneVerification.error && (
