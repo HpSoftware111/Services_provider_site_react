@@ -68,89 +68,105 @@ router.post('/send-code', protect, async (req, res) => {
       expiresAt: expiresAt
     });
 
-    // Send verification code via SMS (Plivo) first, fallback to email
+    // Send verification code via SMS (Twilio) first, fallback to email
     let smsSent = false;
     let emailSent = false;
+    let smsErrorDetails = null;
 
-    // Try to send SMS via Plivo
+    // Try to send SMS via Twilio
     try {
       const smsMessage = `Your Home Services verification code is: ${code}. This code expires in 10 minutes.`;
+      console.log(`\n📤 Sending verification code via SMS...`);
+      console.log(`   Phone: ${phone}`);
+      console.log(`   Code: ${code}`);
+
       const smsResult = await sendSMS(phone, smsMessage);
 
       if (smsResult.success) {
         smsSent = true;
-        console.log(`✅ Verification code sent via SMS to ${phone}. Message UUID: ${smsResult.messageUuid || 'N/A'}`);
+        console.log(`✅ Verification code sent via SMS successfully!`);
+        console.log(`   Message SID: ${smsResult.messageSid || 'N/A'}`);
+        console.log(`   Status: ${smsResult.status || 'N/A'}`);
+        console.log(`   Formatted phone: ${smsResult.to || phone}`);
+        console.log(`   📋 Check delivery status in Twilio Console:`);
+        console.log(`      https://console.twilio.com/us1/monitor/logs/messaging`);
+        console.log(`      Search for SID: ${smsResult.messageSid || 'N/A'}`);
       } else {
-        console.warn(`⚠️  SMS sending failed: ${smsResult.error || 'Unknown error'}`);
-        console.warn(`   Error details: ${smsResult.details || 'No additional details'}`);
-        console.warn(`   Phone number attempted: ${phone}`);
+        smsErrorDetails = {
+          error: smsResult.error || 'Unknown error',
+          userFriendlyMessage: smsResult.userFriendlyMessage || smsResult.error,
+          code: smsResult.code,
+          details: smsResult.details,
+          twilioError: smsResult.twilioError
+        };
+
+        console.warn(`⚠️  SMS sending failed:`);
+        console.warn(`   Error: ${smsResult.error || 'Unknown error'}`);
+        console.warn(`   User-friendly: ${smsResult.userFriendlyMessage || 'N/A'}`);
+        console.warn(`   Error code: ${smsResult.code || 'N/A'}`);
+        console.warn(`   Original phone: ${smsResult.originalPhone || phone}`);
+        if (smsResult.twilioError) {
+          console.warn(`   Twilio error code: ${smsResult.twilioError.code || 'N/A'}`);
+          console.warn(`   Twilio error message: ${smsResult.twilioError.message || 'N/A'}`);
+          if (smsResult.twilioError.moreInfo) {
+            console.warn(`   More info: ${smsResult.twilioError.moreInfo}`);
+          }
+        }
+        console.warn(`   Continuing to email fallback...`);
         // Continue to email fallback
       }
     } catch (smsError) {
-      console.error('❌ Error sending SMS:', smsError);
-      console.error('   Error code:', smsError.code);
-      console.error('   Error message:', smsError.message);
+      smsErrorDetails = {
+        error: smsError.message || 'Unknown error',
+        code: smsError.code,
+        details: smsError.toString()
+      };
+
+      console.error('❌ Exception while sending SMS:');
+      console.error('   Error:', smsError.message || 'Unknown error');
+      console.error('   Error code:', smsError.code || 'N/A');
+      console.error('   Stack:', smsError.stack || 'N/A');
       console.error('   Phone number attempted:', phone);
+      console.error('   Continuing to email fallback...');
       // Continue to email fallback
     }
 
-    // Send verification code via email as fallback or backup
-    // This ensures users always receive the code even if SMS fails
-    try {
-      await sendEmail({
-        to: user.email,
-        subject: 'Phone Verification Code - Home Services',
-        html: `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9f9f9;">
-            <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; text-align: center; border-radius: 8px 8px 0 0;">
-              <h1 style="margin: 0; font-size: 28px;">Phone Verification</h1>
-            </div>
-            <div style="background-color: white; padding: 30px; border-radius: 0 0 8px 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-              <p style="color: #333; font-size: 16px; line-height: 1.6;">
-                Hi ${user.name || 'User'},
-              </p>
-              <p style="color: #333; font-size: 16px; line-height: 1.6;">
-                Your phone verification code is:
-              </p>
-              <div style="text-align: center; margin: 30px 0;">
-                <div style="display: inline-block; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
-                            color: white; padding: 20px 40px; border-radius: 8px; 
-                            font-weight: 600; font-size: 32px; letter-spacing: 8px;">
-                  ${code}
-                </div>
-              </div>
-              <p style="color: #333; font-size: 16px; line-height: 1.6;">
-                This code will expire in 10 minutes.
-              </p>
-              ${smsSent ? '<p style="color: #27ae60; font-size: 14px; margin-top: 15px;">✓ This code has also been sent to your phone via SMS.</p>' : ''}
-              <p style="color: #7f8c8d; font-size: 14px; margin-top: 30px; text-align: center;">
-                If you didn't request this code, please ignore this email.
-              </p>
-            </div>
-          </div>
-        `
-      });
-      emailSent = true;
-      console.log(`✅ Verification code sent via email to ${user.email}`);
-    } catch (emailError) {
-      console.error('❌ Failed to send verification email:', emailError);
-      // Don't fail the request if email fails - code is still generated
-    }
+    // Send verification code via email ONLY if SMS failed
 
     // Log delivery status
-    if (!smsSent && !emailSent) {
+    if (!smsSent) {
       console.warn('⚠️  Warning: Neither SMS nor email was sent successfully. Code is still generated and stored.');
     }
 
-    res.json({
+    // Prepare response
+    const response = {
       success: true,
       message: 'Verification code sent successfully',
       smsSent: smsSent,
       emailSent: emailSent,
-      deliveryMethod: smsSent ? 'SMS' : (emailSent ? 'email' : 'none'),
-      // In development, return code for testing (remove in production)
-      ...(process.env.NODE_ENV === 'development' && { code: code })
-    });
+      deliveryMethod: smsSent ? 'SMS' : (emailSent ? 'email' : 'none')
+    };
+
+    // Include SMS error details if SMS failed (helpful for debugging)
+    if (!smsSent && smsErrorDetails) {
+      response.smsError = {
+        error: smsErrorDetails.error,
+        userFriendlyMessage: smsErrorDetails.userFriendlyMessage || smsErrorDetails.error,
+        code: smsErrorDetails.code
+      };
+
+      // In development, include full error details
+      if (process.env.NODE_ENV === 'development') {
+        response.smsErrorDetails = smsErrorDetails;
+      }
+    }
+
+    // In development, return code for testing (remove in production)
+    if (process.env.NODE_ENV === 'development') {
+      response.code = code;
+    }
+
+    res.json(response);
   } catch (error) {
     console.error('Send verification code error:', error);
     res.status(500).json({

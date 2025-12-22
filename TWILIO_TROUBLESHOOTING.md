@@ -117,4 +117,3 @@ To quickly test if Twilio is configured:
    - Verify phone number in Twilio (trial accounts)
    - Check phone carrier/network
 
-

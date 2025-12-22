@@ -95,7 +95,7 @@ const ServiceRequest = () => {
                 verified,
                 error: '',
                 info: verified
-                    ? 'Please check verfication code'
+                    ? 'Your phone number is verified.'
                     : 'Your phone number is not verified. Please request a code and verify it before submitting.'
             }));
         } catch (err) {
@@ -372,17 +372,28 @@ const ServiceRequest = () => {
 
         try {
             const response = await api.post('/phone-verification/send-code', { phone });
-            const { smsSent, emailSent, deliveryMethod } = response.data || {};
+            const { smsSent, emailSent, deliveryMethod, smsError } = response.data || {};
 
             let infoMessage = 'Verification code sent. ';
+            let errorMessage = '';
+
             if (smsSent && emailSent) {
                 infoMessage += 'Please check your phone (SMS) and email for the 6-digit code.';
             } else if (smsSent) {
                 infoMessage += 'Please check your phone (SMS) for the 6-digit code.';
             } else if (emailSent) {
                 infoMessage += 'SMS delivery failed. Please check your email for the 6-digit code.';
+                // Show user-friendly SMS error if available
+                if (smsError?.userFriendlyMessage) {
+                    errorMessage = `SMS Error: ${smsError.userFriendlyMessage}`;
+                } else {
+                    errorMessage = 'SMS could not be sent. Please check your email for the verification code.';
+                }
             } else {
                 infoMessage += 'Please check your email for the 6-digit code.';
+                if (smsError?.userFriendlyMessage) {
+                    errorMessage = `SMS Error: ${smsError.userFriendlyMessage}`;
+                }
             }
 
             setPhoneVerification(prev => ({
@@ -391,16 +402,23 @@ const ServiceRequest = () => {
                 checked: false,
                 verified: false,
                 info: infoMessage,
-                error: smsSent ? '' : 'SMS could not be sent. Please check your email for the verification code, or verify your Twilio configuration.',
+                error: errorMessage,
                 smsSent: smsSent || false
             }));
         } catch (err) {
             console.error('Error sending verification code:', err);
             const errorMessage = err.response?.data?.error || 'Failed to send verification code. Please try again.';
+            const smsError = err.response?.data?.smsError;
+            
+            let userMessage = errorMessage;
+            if (smsError?.userFriendlyMessage) {
+                userMessage = `SMS Error: ${smsError.userFriendlyMessage}`;
+            }
+            
             setPhoneVerification(prev => ({
                 ...prev,
                 sending: false,
-                error: errorMessage,
+                error: userMessage,
                 info: 'If SMS failed, please check your email for the verification code.',
                 smsSent: false
             }));

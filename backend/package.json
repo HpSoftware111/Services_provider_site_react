@@ -41,7 +41,7 @@
     "nodemailer": "^7.0.10",
     "sequelize": "^6.37.7",
     "stripe": "^14.25.0",
-    "plivo": "^4.50.0"
+    "twilio": "^5.11.1"
   },
   "devDependencies": {
     "nodemon": "^3.0.2"
