@@ -209,7 +209,9 @@ router.post('/provider-signup', [
       phone: phone,
       email: email,
       isActive: false, // New businesses need approval
-      isVerified: false
+      isVerified: false,
+      latitude: req.body.latitude || null,
+      longitude: req.body.longitude || null
     });
 
     // Update user's businessId

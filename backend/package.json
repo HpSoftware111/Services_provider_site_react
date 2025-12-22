@@ -13,7 +13,8 @@
     "migrate-avatar": "node scripts/update-avatar-field.js",
     "migrate-approved-at": "node scripts/add-approved-at-field.js",
     "check-indexes": "node scripts/check-indexes.js",
-    "validate-env": "node scripts/validate-env.js"
+    "validate-env": "node scripts/validate-env.js",
+    "populate-coordinates": "node scripts/populate-business-coordinates.js"
   },
   "keywords": [
     "business",

@@ -32,7 +32,9 @@ const BusinessInformation = () => {
     socialMedia: [],
     tags: [],
     isPublic: true,
-    logo: ''
+    logo: '',
+    latitude: null,
+    longitude: null
   });
   const [categoriesWithServices, setCategoriesWithServices] = useState([]);
   const [selectedItems, setSelectedItems] = useState([]); // Array of { type: 'category' | 'service', id, name, categoryId? }
@@ -265,7 +267,9 @@ const BusinessInformation = () => {
           : [],
         tags: Array.isArray(selectedBusiness.tags) ? selectedBusiness.tags : [],
         isPublic: selectedBusiness.isPublic !== undefined ? selectedBusiness.isPublic : true,
-        logo: selectedBusiness.logo || ''
+        logo: selectedBusiness.logo || '',
+        latitude: selectedBusiness.latitude || null,
+        longitude: selectedBusiness.longitude || null
       });
     } catch (error) {
       console.error('Error fetching business:', error);
@@ -279,6 +283,46 @@ const BusinessInformation = () => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
   };
+
+  // Auto-geocode zip code when it changes
+  useEffect(() => {
+    const geocodeZipCode = async () => {
+      const zipCode = formData.zipCode?.trim();
+      
+      // Only geocode if zip code is valid (5 digits or more)
+      if (zipCode && zipCode.length >= 5 && formData.country === 'USA') {
+        try {
+          const cleanZipCode = zipCode.replace(/[\s\-]/g, '').substring(0, 5);
+          const response = await api.get(`/businesses/geocode/${cleanZipCode}`);
+          
+          if (response.data.success && response.data.coordinates) {
+            setFormData(prev => ({
+              ...prev,
+              latitude: response.data.coordinates.latitude,
+              longitude: response.data.coordinates.longitude
+            }));
+          }
+        } catch (error) {
+          // Silently fail - coordinates are optional
+          console.log('Could not geocode zip code:', error);
+        }
+      } else if (!zipCode || formData.country !== 'USA') {
+        // Clear coordinates if zip code is removed or country is not USA
+        setFormData(prev => ({
+          ...prev,
+          latitude: null,
+          longitude: null
+        }));
+      }
+    };
+
+    // Debounce geocoding to avoid too many API calls
+    const timeoutId = setTimeout(() => {
+      geocodeZipCode();
+    }, 1000); // Wait 1 second after user stops typing
+
+    return () => clearTimeout(timeoutId);
+  }, [formData.zipCode, formData.country]);
 
   // Build grouped list of categories with their services for display
   const getGroupedItems = () => {

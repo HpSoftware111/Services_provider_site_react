@@ -9,55 +9,101 @@ async function getCoordinatesFromZipCode(zipCode) {
   try {
     // Clean zip code (remove dashes, spaces)
     const cleanZipCode = zipCode.replace(/[\s\-]/g, '');
-
-    // Use Nominatim (OpenStreetMap) - free geocoding service
-    const response = await axios.get('https://nominatim.openstreetmap.org/search', {
-      params: {
-        postalcode: cleanZipCode,
-        country: 'USA',
-        format: 'json',
-        limit: 1
-      },
-      headers: {
-        'User-Agent': 'HomeServicesApp/1.0' // Required by Nominatim
-      },
-      timeout: 5000 // 5 second timeout
-    });
-
-    if (response.data && response.data.length > 0) {
-      const result = response.data[0];
-      return {
-        lat: parseFloat(result.lat),
-        lng: parseFloat(result.lon)
-      };
+    
+    if (!cleanZipCode || cleanZipCode.length < 5) {
+      console.warn(`⚠️  Invalid zip code format: ${zipCode}`);
+      return null;
     }
 
-    // Fallback: Try Google Geocoding API if API key is available
+    console.log(`   Attempting to geocode: ${cleanZipCode}`);
+
+    // Use Google Geocoding API first if API key is available (more reliable)
     if (process.env.GOOGLE_GEOCODING_API_KEY) {
       try {
+        console.log(`   Using Google Geocoding API...`);
         const googleResponse = await axios.get('https://maps.googleapis.com/maps/api/geocode/json', {
           params: {
             address: cleanZipCode,
+            components: `country:US|postal_code:${cleanZipCode}`,
             key: process.env.GOOGLE_GEOCODING_API_KEY
           },
-          timeout: 5000
+          timeout: 10000
         });
 
-        if (googleResponse.data.results && googleResponse.data.results.length > 0) {
+        if (googleResponse.data && googleResponse.data.status === 'OK' && 
+            googleResponse.data.results && googleResponse.data.results.length > 0) {
           const location = googleResponse.data.results[0].geometry.location;
-          return {
-            lat: location.lat,
-            lng: location.lng
-          };
+          const lat = location.lat;
+          const lng = location.lng;
+          
+          if (isNaN(lat) || isNaN(lng)) {
+            console.warn(`⚠️  Invalid coordinates returned from Google: lat=${lat}, lng=${lng}`);
+          } else {
+            console.log(`   ✅ Google Geocoding successful: lat=${lat}, lng=${lng}`);
+            return { lat, lng };
+          }
+        } else if (googleResponse.data && googleResponse.data.status) {
+          console.warn(`⚠️  Google Geocoding API returned status: ${googleResponse.data.status}`);
         }
       } catch (googleError) {
-        console.warn('Google Geocoding API error:', googleError.message);
+        console.warn(`⚠️  Google Geocoding API error: ${googleError.message}`);
+        if (googleError.response) {
+          console.warn(`   Status: ${googleError.response.status}, Data:`, JSON.stringify(googleError.response.data).substring(0, 200));
+        }
       }
+    }
+
+    // Fallback: Use Nominatim (OpenStreetMap) - free geocoding service
+    try {
+      console.log(`   Trying Nominatim (OpenStreetMap) as fallback...`);
+      const response = await axios.get('https://nominatim.openstreetmap.org/search', {
+        params: {
+          postalcode: cleanZipCode,
+          country: 'USA',
+          format: 'json',
+          limit: 1
+        },
+        headers: {
+          'User-Agent': 'HomeServicesApp/1.0' // Required by Nominatim
+        },
+        timeout: 10000 // 10 second timeout
+      });
+
+      if (response.data && response.data.length > 0) {
+        const result = response.data[0];
+        const lat = parseFloat(result.lat);
+        const lng = parseFloat(result.lon);
+        
+        if (isNaN(lat) || isNaN(lng)) {
+          console.warn(`⚠️  Invalid coordinates returned: lat=${result.lat}, lng=${result.lon}`);
+          return null;
+        }
+        
+        console.log(`   ✅ Nominatim Geocoding successful: lat=${lat}, lng=${lng}`);
+        return { lat, lng };
+      } else {
+        console.warn(`⚠️  No results found from Nominatim for zip code: ${cleanZipCode}`);
+      }
+    } catch (nominatimError) {
+      console.warn(`⚠️  Nominatim error: ${nominatimError.message}`);
     }
 
     return null;
   } catch (error) {
-    console.error('Error geocoding zip code:', error.message);
+    if (error.response) {
+      // The request was made and the server responded with a status code
+      // that falls out of the range of 2xx
+      console.error(`❌ Geocoding API error: ${error.response.status} - ${error.response.statusText}`);
+      if (error.response.data) {
+        console.error(`   Response:`, JSON.stringify(error.response.data).substring(0, 200));
+      }
+    } else if (error.request) {
+      // The request was made but no response was received
+      console.error(`❌ Geocoding request timeout: No response from server`);
+    } else {
+      // Something happened in setting up the request that triggered an Error
+      console.error(`❌ Geocoding error: ${error.message}`);
+    }
     return null;
   }
 }

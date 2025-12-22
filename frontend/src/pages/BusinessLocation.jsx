@@ -13,7 +13,9 @@ const BusinessLocation = () => {
     city: '',
     state: '',
     zipCode: '',
-    country: 'USA'
+    country: 'USA',
+    latitude: null,
+    longitude: null
   });
 
   useEffect(() => {
@@ -32,7 +34,9 @@ const BusinessLocation = () => {
           city: biz.city || '',
           state: biz.state || '',
           zipCode: biz.zipCode || '',
-          country: biz.country || 'USA'
+          country: biz.country || 'USA',
+          latitude: biz.latitude || null,
+          longitude: biz.longitude || null
         });
       }
     } catch (error) {
@@ -46,6 +50,46 @@ const BusinessLocation = () => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
   };
+
+  // Auto-geocode zip code when it changes
+  useEffect(() => {
+    const geocodeZipCode = async () => {
+      const zipCode = formData.zipCode?.trim();
+      
+      // Only geocode if zip code is valid (5 digits or more)
+      if (zipCode && zipCode.length >= 5 && formData.country === 'USA') {
+        try {
+          const cleanZipCode = zipCode.replace(/[\s\-]/g, '').substring(0, 5);
+          const response = await api.get(`/businesses/geocode/${cleanZipCode}`);
+          
+          if (response.data.success && response.data.coordinates) {
+            setFormData(prev => ({
+              ...prev,
+              latitude: response.data.coordinates.latitude,
+              longitude: response.data.coordinates.longitude
+            }));
+          }
+        } catch (error) {
+          // Silently fail - coordinates are optional
+          console.log('Could not geocode zip code:', error);
+        }
+      } else if (!zipCode || formData.country !== 'USA') {
+        // Clear coordinates if zip code is removed or country is not USA
+        setFormData(prev => ({
+          ...prev,
+          latitude: null,
+          longitude: null
+        }));
+      }
+    };
+
+    // Debounce geocoding to avoid too many API calls
+    const timeoutId = setTimeout(() => {
+      geocodeZipCode();
+    }, 1000); // Wait 1 second after user stops typing
+
+    return () => clearTimeout(timeoutId);
+  }, [formData.zipCode, formData.country]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();

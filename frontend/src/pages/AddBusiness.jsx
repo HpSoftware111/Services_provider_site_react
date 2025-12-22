@@ -14,7 +14,9 @@ const AddBusiness = () => {
     phone: '', email: '', website: '',
     socialLinks: { facebook: '', twitter: '', instagram: '', linkedin: '' },
     images: [],
-    videos: []
+    videos: [],
+    latitude: null,
+    longitude: null
   });
   // Simplified form data for logged-out users
   const [simpleFormData, setSimpleFormData] = useState({
@@ -26,7 +28,9 @@ const AddBusiness = () => {
     address: '',
     city: '',
     state: '',
-    zipCode: ''
+    zipCode: '',
+    latitude: null,
+    longitude: null
   });
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -66,6 +70,86 @@ const AddBusiness = () => {
       setSubcategories([]);
     }
   }, [formData.categoryId]);
+
+  // Auto-geocode zip code when it changes (for full form)
+  useEffect(() => {
+    const geocodeZipCode = async () => {
+      const zipCode = formData.zipCode?.trim();
+      
+      // Only geocode if zip code is valid (5 digits or more)
+      if (zipCode && zipCode.length >= 5) {
+        try {
+          const cleanZipCode = zipCode.replace(/[\s\-]/g, '').substring(0, 5);
+          const response = await api.get(`/businesses/geocode/${cleanZipCode}`);
+          
+          if (response.data.success && response.data.coordinates) {
+            setFormData(prev => ({
+              ...prev,
+              latitude: response.data.coordinates.latitude,
+              longitude: response.data.coordinates.longitude
+            }));
+          }
+        } catch (error) {
+          // Silently fail - coordinates are optional
+          console.log('Could not geocode zip code:', error);
+        }
+      } else if (!zipCode) {
+        // Clear coordinates if zip code is removed
+        setFormData(prev => ({
+          ...prev,
+          latitude: null,
+          longitude: null
+        }));
+      }
+    };
+
+    // Debounce geocoding to avoid too many API calls
+    const timeoutId = setTimeout(() => {
+      geocodeZipCode();
+    }, 1000); // Wait 1 second after user stops typing
+
+    return () => clearTimeout(timeoutId);
+  }, [formData.zipCode]);
+
+  // Auto-geocode zip code when it changes (for simple form)
+  useEffect(() => {
+    const geocodeZipCode = async () => {
+      const zipCode = simpleFormData.zipCode?.trim();
+      
+      // Only geocode if zip code is valid (5 digits or more)
+      if (zipCode && zipCode.length >= 5) {
+        try {
+          const cleanZipCode = zipCode.replace(/[\s\-]/g, '').substring(0, 5);
+          const response = await api.get(`/businesses/geocode/${cleanZipCode}`);
+          
+          if (response.data.success && response.data.coordinates) {
+            setSimpleFormData(prev => ({
+              ...prev,
+              latitude: response.data.coordinates.latitude,
+              longitude: response.data.coordinates.longitude
+            }));
+          }
+        } catch (error) {
+          // Silently fail - coordinates are optional
+          console.log('Could not geocode zip code:', error);
+        }
+      } else if (!zipCode) {
+        // Clear coordinates if zip code is removed
+        setSimpleFormData(prev => ({
+          ...prev,
+          latitude: null,
+          longitude: null
+        }));
+      }
+    };
+
+    // Debounce geocoding to avoid too many API calls
+    const timeoutId = setTimeout(() => {
+      geocodeZipCode();
+    }, 1000); // Wait 1 second after user stops typing
+
+    return () => clearTimeout(timeoutId);
+  }, [simpleFormData.zipCode]);
 
   // Scroll error into view when it appears
   useEffect(() => {
@@ -176,6 +260,23 @@ const AddBusiness = () => {
     setLoading(true);
 
     try {
+      // If zip code exists but coordinates don't, try to geocode immediately before submission
+      let finalLatitude = simpleFormData.latitude;
+      let finalLongitude = simpleFormData.longitude;
+      
+      if (simpleFormData.zipCode && simpleFormData.zipCode.trim().length >= 5 && (!simpleFormData.latitude || !simpleFormData.longitude)) {
+        try {
+          const cleanZipCode = simpleFormData.zipCode.replace(/[\s\-]/g, '').substring(0, 5);
+          const response = await api.get(`/businesses/geocode/${cleanZipCode}`);
+          if (response.data.success && response.data.coordinates) {
+            finalLatitude = response.data.coordinates.latitude;
+            finalLongitude = response.data.coordinates.longitude;
+          }
+        } catch (error) {
+          console.log('Could not geocode zip code before submission:', error);
+        }
+      }
+
       const response = await providerSignup({
         businessName: simpleFormData.businessName,
         categoryId: parseInt(simpleFormData.categoryId),
@@ -185,7 +286,9 @@ const AddBusiness = () => {
         address: simpleFormData.address,
         city: simpleFormData.city || '',
         state: simpleFormData.state || '',
-        zipCode: simpleFormData.zipCode || null
+        zipCode: simpleFormData.zipCode || null,
+        latitude: finalLatitude,
+        longitude: finalLongitude
       });
 
       if (response.needsVerification) {
@@ -224,13 +327,32 @@ const AddBusiness = () => {
     setLoading(true);
 
     try {
+      // If zip code exists but coordinates don't, try to geocode immediately before submission
+      let finalLatitude = formData.latitude;
+      let finalLongitude = formData.longitude;
+      
+      if (formData.zipCode && formData.zipCode.trim().length >= 5 && (!formData.latitude || !formData.longitude)) {
+        try {
+          const cleanZipCode = formData.zipCode.replace(/[\s\-]/g, '').substring(0, 5);
+          const response = await api.get(`/businesses/geocode/${cleanZipCode}`);
+          if (response.data.success && response.data.coordinates) {
+            finalLatitude = response.data.coordinates.latitude;
+            finalLongitude = response.data.coordinates.longitude;
+          }
+        } catch (error) {
+          console.log('Could not geocode zip code before submission:', error);
+        }
+      }
+
       const cleanData = {
         ...formData,
         categoryId: parseInt(formData.categoryId),
         subCategoryId: formData.subCategoryId ? parseInt(formData.subCategoryId) : null,
         zipCode: formData.zipCode || null,
         email: formData.email || null,
-        website: formData.website || null
+        website: formData.website || null,
+        latitude: finalLatitude,
+        longitude: finalLongitude
       };
 
       const response = await api.post('/businesses', cleanData);
