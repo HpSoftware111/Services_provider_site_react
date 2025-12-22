@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Helmet } from 'react-helmet-async';
 import { AuthContext } from '../context/AuthContext';
 import api from '../services/api';
 import './Home.css';
@@ -117,10 +118,61 @@ const Home = () => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  const siteUrl = window.location.origin;
+  const defaultImage = `${siteUrl}/logo.png`;
+
   return (
-    <div className="home">
-      {/* Hero Section */}
-      <section className="hero">
+    <>
+      <Helmet>
+        <title>Home Services Directory - Find Local Businesses Near You | Franchise Navigator</title>
+        <meta 
+          name="description" 
+          content="Discover the best local businesses and service providers in your area. Browse verified businesses, read reviews, compare services, and connect with trusted professionals. Find everything from home services to professional services." 
+        />
+        <meta 
+          name="keywords" 
+          content="local businesses, service providers, home services, business directory, find businesses, local services, business reviews, service directory" 
+        />
+
+        {/* Open Graph / Facebook */}
+        <meta property="og:type" content="website" />
+        <meta property="og:url" content={siteUrl} />
+        <meta property="og:title" content="Home Services Directory - Find Local Businesses Near You" />
+        <meta property="og:description" content="Discover the best local businesses and service providers in your area. Browse verified businesses, read reviews, and connect with trusted professionals." />
+        <meta property="og:image" content={defaultImage} />
+
+        {/* Twitter */}
+        <meta name="twitter:card" content="summary_large_image" />
+        <meta name="twitter:url" content={siteUrl} />
+        <meta name="twitter:title" content="Home Services Directory - Find Local Businesses Near You" />
+        <meta name="twitter:description" content="Discover the best local businesses and service providers in your area. Browse verified businesses, read reviews, and connect with trusted professionals." />
+        <meta name="twitter:image" content={defaultImage} />
+
+        {/* Canonical URL */}
+        <link rel="canonical" href={siteUrl} />
+
+        {/* Structured Data */}
+        <script type="application/ld+json">
+          {JSON.stringify({
+            "@context": "https://schema.org",
+            "@type": "WebSite",
+            "name": "Franchise Navigator",
+            "url": siteUrl,
+            "description": "Find the best local businesses and service providers in your area",
+            "potentialAction": {
+              "@type": "SearchAction",
+              "target": {
+                "@type": "EntryPoint",
+                "urlTemplate": `${siteUrl}/search?q={search_term_string}`
+              },
+              "query-input": "required name=search_term_string"
+            }
+          })}
+        </script>
+      </Helmet>
+      <div className="home">
+        {/* Hero Section */}
+        <section className="hero">
         <div className="container">
           <div className="hero-content">
             <h1>Discover Businesses Near You</h1>
@@ -386,7 +438,8 @@ const Home = () => {
           )}
         </div>
       </section>
-    </div>
+      </div>
+    </>
   );
 };
 

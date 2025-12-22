@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useContext } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
+import { Helmet } from 'react-helmet-async';
 import { AuthContext } from '../context/AuthContext';
 import api from '../services/api';
 import './BusinessDetail.css';
@@ -223,7 +224,120 @@ const BusinessDetail = () => {
   const reviewCount = business.ratingCount || 0;
 
   return (
-    <div className="business-detail-page">
+    <>
+      <Helmet>
+        {/* Basic SEO */}
+        <title>
+          {business.name}
+          {business.category?.name ? ` | ${business.category.name}` : ''} | Franchise Navigator
+        </title>
+        <meta
+          name="description"
+          content={
+            business.description
+              ? business.description.substring(0, 155)
+              : `Learn more about ${business.name}${
+                  business.category?.name ? `, a ${business.category.name} service provider` : ''
+                } in ${business.city}, ${business.state}. View reviews, contact details, location, and more.`
+          }
+        />
+
+        {/* Open Graph / Facebook */}
+        <meta property="og:type" content="business.business" />
+        <meta property="og:title" content={`${business.name}${business.category?.name ? ` | ${business.category.name}` : ''}`} />
+        <meta
+          property="og:description"
+          content={
+            business.description
+              ? business.description.substring(0, 155)
+              : `Discover ${business.name} in ${business.city}, ${business.state}. View reviews, contact information, and location.`
+          }
+        />
+        <meta
+          property="og:image"
+          content={
+            business.logo ||
+            (Array.isArray(business.images) && business.images.length > 0 && business.images[0]) ||
+            '/logo.png'
+          }
+        />
+        <meta property="og:url" content={window.location.href} />
+
+        {/* Twitter */}
+        <meta name="twitter:card" content="summary_large_image" />
+        <meta
+          name="twitter:title"
+          content={`${business.name}${business.category?.name ? ` | ${business.category.name}` : ''}`}
+        />
+        <meta
+          name="twitter:description"
+          content={
+            business.description
+              ? business.description.substring(0, 155)
+              : `Discover ${business.name} in ${business.city}, ${business.state}. View reviews, contact information, and location.`
+          }
+        />
+        <meta
+          name="twitter:image"
+          content={
+            business.logo ||
+            (Array.isArray(business.images) && business.images.length > 0 && business.images[0]) ||
+            '/logo.png'
+          }
+        />
+
+        {/* Canonical URL */}
+        <link rel="canonical" href={window.location.href} />
+
+        {/* Structured Data - LocalBusiness */}
+        <script type="application/ld+json">
+          {JSON.stringify({
+            '@context': 'https://schema.org',
+            '@type': 'LocalBusiness',
+            name: business.name,
+            description:
+              business.description ||
+              `${business.name} is a local service provider in ${business.city}, ${business.state}.`,
+            image:
+              business.logo ||
+              (Array.isArray(business.images) && business.images.length > 0 && business.images[0]) ||
+              undefined,
+            url: window.location.href,
+            telephone: business.phone || undefined,
+            email: business.email || undefined,
+            address: {
+              '@type': 'PostalAddress',
+              streetAddress: business.address,
+              addressLocality: business.city,
+              addressRegion: business.state,
+              postalCode: business.zipCode || '',
+              addressCountry: 'US'
+            },
+            geo:
+              business.latitude && business.longitude
+                ? {
+                    '@type': 'GeoCoordinates',
+                    latitude: parseFloat(business.latitude),
+                    longitude: parseFloat(business.longitude)
+                  }
+                : undefined,
+            aggregateRating:
+              reviewCount > 0
+                ? {
+                    '@type': 'AggregateRating',
+                    ratingValue: rating.toFixed(1),
+                    reviewCount
+                  }
+                : undefined,
+            sameAs:
+              business.socialLinks && Object.values(business.socialLinks).some(Boolean)
+                ? Object.values(business.socialLinks).filter(Boolean)
+                : undefined
+          })}
+        </script>
+      </Helmet>
+
+      <div className="business-detail-page">
       {/* Hero Header Section */}
       <div className="business-hero">
         <div className="business-hero-background"></div>
