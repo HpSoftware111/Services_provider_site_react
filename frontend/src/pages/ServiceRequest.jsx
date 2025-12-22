@@ -222,17 +222,16 @@ const ServiceRequest = () => {
             // Additional client-side filtering to ensure all businesses match:
             // 1. Category must match
             // 2. Service must match (if subcategory/service was selected) - check services array
-            // 3. Zip code must match
+            // Note: Zip code filtering is now handled by backend with 20-mile radius search
             let filteredBusinesses = (response.data.businesses || []).filter(business => {
                 // Check category match
                 if (business.categoryId !== categoryId) {
                     return false;
                 }
 
-                // Check zip code match
-                if (business.zipCode !== formData.zipCode) {
-                    return false;
-                }
+                // Zip code filtering is handled by backend with radius search
+                // Backend returns businesses within 20 miles of the entered zip code
+                // No need for exact zip code matching here
 
                 // Check service match (if subcategory/service was selected)
                 // Business services are stored as an array of service names

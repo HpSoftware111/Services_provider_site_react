@@ -5,6 +5,7 @@ const { sequelize } = require('../config/database');
 const { Business, Category, User, Contact } = require('../models');
 const { protect, optionalAuth } = require('../middleware/auth');
 const logActivity = require('../utils/logActivity');
+const { getCoordinatesFromZipCode, calculateDistance, getBoundingBox } = require('../utils/geolocation');
 
 // Helper function to build order from sort query
 const buildOrderFromQuery = (sort) => {
@@ -183,11 +184,69 @@ router.get('/', optionalAuth, async (req, res) => {
       }
     }
 
-    // Filter by zip code
+    // Filter by zip code with radius search (20 miles default)
+    let zipCoordinates = null;
+    let radiusMiles = 20; // Default radius
+    let useRadiusSearch = false;
+    
     if (req.query.zipCode) {
-      const zipCodes = Array.isArray(req.query.zipCode) ? req.query.zipCode : [req.query.zipCode];
-      if (zipCodes.length > 0) {
-        baseWhere.zipCode = { [Op.in]: zipCodes };
+      const zipCode = Array.isArray(req.query.zipCode) ? req.query.zipCode[0] : req.query.zipCode;
+      radiusMiles = parseFloat(req.query.radius) || 20; // Allow custom radius via query param
+      
+      console.log(`🔍 Searching businesses for zip code: ${zipCode}`);
+      
+      // Get coordinates for the zip code
+      try {
+        console.log(`📍 Geocoding zip code: ${zipCode}...`);
+        zipCoordinates = await getCoordinatesFromZipCode(zipCode);
+        
+        if (zipCoordinates) {
+          console.log(`✅ Zip code geocoded successfully: lat=${zipCoordinates.lat}, lng=${zipCoordinates.lng}`);
+          
+          // Get bounding box for faster database query
+          const boundingBox = getBoundingBox(zipCoordinates.lat, zipCoordinates.lng, radiusMiles);
+          
+          // Add latitude/longitude filter using bounding box
+          // This is a pre-filter to reduce the dataset before calculating exact distances
+          // Use OR condition: businesses with coordinates in radius OR exact zip code match
+          const zipCodeCondition = {
+            [Op.or]: [
+              // Businesses with coordinates within bounding box
+              {
+                [Op.and]: [
+                  { latitude: { [Op.between]: [boundingBox.minLat, boundingBox.maxLat], [Op.ne]: null } },
+                  { longitude: { [Op.between]: [boundingBox.minLng, boundingBox.maxLng], [Op.ne]: null } }
+                ]
+              },
+              // Fallback: businesses with exact zip code match (for businesses without coordinates)
+              { zipCode: zipCode }
+            ]
+          };
+          
+          // If there's an existing Op.or (from search term), combine with Op.and
+          if (baseWhere[Op.or]) {
+            const existingOr = baseWhere[Op.or];
+            delete baseWhere[Op.or];
+            baseWhere[Op.and] = baseWhere[Op.and] || [];
+            baseWhere[Op.and].push({ [Op.or]: existingOr }, zipCodeCondition);
+          } else {
+            // No existing Op.or, just add the zip code condition
+            baseWhere[Op.or] = zipCodeCondition[Op.or];
+          }
+          
+          // Store for post-processing
+          req.zipCoordinates = zipCoordinates;
+          req.radiusMiles = radiusMiles;
+          useRadiusSearch = true;
+        } else {
+          // If geocoding fails, fall back to exact zip code match
+          console.warn(`⚠️  Could not geocode zip code ${zipCode}, falling back to exact match`);
+          baseWhere.zipCode = zipCode;
+        }
+      } catch (error) {
+        console.error('❌ Error in zip code geocoding:', error.message);
+        // Fallback to exact match on error
+        baseWhere.zipCode = zipCode;
       }
     }
 
@@ -272,16 +331,103 @@ router.get('/', optionalAuth, async (req, res) => {
       whereClause = mergeWithStatusFilters(baseWhere);
     }
 
-    const { count, rows: businesses } = await Business.findAndCountAll({
+    let { count, rows: businesses } = await Business.findAndCountAll({
       where: whereClause,
       include: [
         { model: Category, as: 'category', attributes: ['id', 'name', 'slug', 'icon'] },
         { model: User, as: 'owner', attributes: ['id', 'name', 'email', 'avatar'] }
       ],
       order: buildOrderFromQuery(req.query.sort),
-      limit,
-      offset
+      limit: req.query.zipCode && req.zipCoordinates ? 200 : limit, // Get more results for radius filtering
+      offset: req.query.zipCode && req.zipCoordinates ? 0 : offset // Don't paginate before radius filter
     });
+
+    // If radius search was used, filter by exact distance and add distance to results
+    if (req.zipCoordinates && businesses.length > 0) {
+      const zipLat = req.zipCoordinates.lat;
+      const zipLng = req.zipCoordinates.lng;
+      const radiusMiles = req.radiusMiles;
+      const zipCode = Array.isArray(req.query.zipCode) ? req.query.zipCode[0] : req.query.zipCode;
+
+      console.log(`📊 Processing ${businesses.length} businesses for radius search (${radiusMiles} miles)`);
+
+      // Calculate distance for each business and filter
+      const businessesWithDistance = businesses
+        .map(business => {
+          const businessData = business.toJSON();
+          
+          // If business has coordinates, calculate distance
+          if (business.latitude != null && business.longitude != null) {
+            const businessLat = parseFloat(business.latitude);
+            const businessLng = parseFloat(business.longitude);
+            
+            // Validate coordinates
+            if (isNaN(businessLat) || isNaN(businessLng)) {
+              // Invalid coordinates but exact zip match - include it
+              if (business.zipCode === zipCode) {
+                return {
+                  ...businessData,
+                  distance: null // No distance available
+                };
+              }
+              return null;
+            }
+
+            const distance = calculateDistance(
+              zipLat,
+              zipLng,
+              businessLat,
+              businessLng
+            );
+
+            // Include businesses within radius
+            if (distance <= radiusMiles) {
+              return {
+                ...businessData,
+                distance: parseFloat(distance.toFixed(2)) // Distance in miles, rounded to 2 decimals
+              };
+            }
+            
+            // Outside radius - exclude
+            return null;
+          } else {
+            // Business has no coordinates - include if exact zip code match
+            if (business.zipCode === zipCode) {
+              return {
+                ...businessData,
+                distance: null // No distance available
+              };
+            }
+            return null;
+          }
+        })
+        .filter(business => business !== null) // Remove null entries
+        .sort((a, b) => {
+          // Sort: businesses with distance first (by distance), then businesses without distance
+          if (a.distance !== null && b.distance !== null) {
+            return a.distance - b.distance; // Sort by distance (closest first)
+          } else if (a.distance !== null) {
+            return -1; // Businesses with distance come first
+          } else if (b.distance !== null) {
+            return 1;
+          }
+          return 0; // Both have no distance, maintain order
+        });
+
+      console.log(`✅ Found ${businessesWithDistance.length} businesses within ${radiusMiles} miles or exact zip match`);
+
+      // Apply pagination after radius filtering
+      const startIndex = (page - 1) * limit;
+      const endIndex = startIndex + limit;
+      const paginatedBusinesses = businessesWithDistance.slice(startIndex, endIndex);
+
+      // Update businesses array and count
+      businesses = paginatedBusinesses;
+      count = businessesWithDistance.length;
+    } else if (req.query.zipCode) {
+      // No radius search but zip code provided - log results
+      console.log(`📊 Found ${businesses.length} businesses with exact zip code match`);
+    }
 
     res.json({
       success: true,

@@ -20,7 +20,8 @@ const sequelize = new Sequelize(
     },
     dialectOptions: {
       connectTimeout: 10000, // 10 second connection timeout
-      requestTimeout: 30000, // 30 second query timeout
+      // Note: requestTimeout is not a valid MySQL2 option
+      // Query timeout is handled by Sequelize's pool.acquire setting
     },
     define: {
       timestamps: true,
