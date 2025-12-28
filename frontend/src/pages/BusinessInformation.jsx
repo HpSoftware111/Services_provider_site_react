@@ -140,36 +140,54 @@ const BusinessInformation = () => {
       if (selectedBusiness) {
         setBusiness(selectedBusiness);
         
-        // Initialize selected items from business data (only services, not categories)
+        // Initialize selected items from business data
+        // Now use subcategories from the many-to-many relationship
         const selected = [];
-        
-        // Add services if exists - handle both array and JSON string
-        let bizServices = selectedBusiness.services || [];
-        if (typeof bizServices === 'string') {
-          try {
-            bizServices = JSON.parse(bizServices);
-          } catch (e) {
-            console.error('Error parsing services JSON:', e);
-            bizServices = [];
-          }
-        }
-        if (Array.isArray(bizServices) && bizServices.length > 0) {
-          bizServices.forEach(serviceName => {
-            // Find which category this service belongs to
-            for (const cat of categoriesWithSubs) {
-              const service = cat.subcategories.find(sub => sub.name === serviceName);
-              if (service) {
-                selected.push({
-                  type: 'service',
-                  id: service.id,
-                  name: service.name,
-                  categoryId: cat.id,
-                  categoryName: cat.name
-                });
-                break;
-              }
+
+        // First, try to load from business.subcategories (many-to-many relationship)
+        if (selectedBusiness.subcategories && Array.isArray(selectedBusiness.subcategories) && selectedBusiness.subcategories.length > 0) {
+          selectedBusiness.subcategories.forEach(subcategory => {
+            // Find the category for this subcategory
+            const category = categoriesWithSubs.find(cat => cat.id === subcategory.categoryId);
+            if (category) {
+              selected.push({
+                type: 'service',
+                id: subcategory.id,
+                name: subcategory.name,
+                categoryId: category.id,
+                categoryName: category.name
+              });
             }
           });
+        } else {
+          // Fallback: Load from services array (backward compatibility)
+          let bizServices = selectedBusiness.services || [];
+          if (typeof bizServices === 'string') {
+            try {
+              bizServices = JSON.parse(bizServices);
+            } catch (e) {
+              console.error('Error parsing services JSON:', e);
+              bizServices = [];
+            }
+          }
+          if (Array.isArray(bizServices) && bizServices.length > 0) {
+            bizServices.forEach(serviceName => {
+              // Find which category this service belongs to
+              for (const cat of categoriesWithSubs) {
+                const service = cat.subcategories.find(sub => sub.name === serviceName);
+                if (service) {
+                  selected.push({
+                    type: 'service',
+                    id: service.id,
+                    name: service.name,
+                    categoryId: cat.id,
+                    categoryName: cat.name
+                  });
+                  break;
+                }
+              }
+            });
+          }
         }
         
         setSelectedItems(selected);
@@ -195,7 +213,7 @@ const BusinessInformation = () => {
           isPublic: selectedBusiness.isPublic !== undefined ? selectedBusiness.isPublic : true,
           logo: selectedBusiness.logo || ''
         });
-      }
+        }
     } catch (error) {
       console.error('Error fetching data:', error);
       setMessage({ type: 'error', text: 'Failed to load data' });
@@ -581,7 +599,7 @@ const BusinessInformation = () => {
         }
       });
 
-      // Get services (categories are not selectable)
+      // Get services (subcategories)
       const selectedServices = selectedItems.filter(item => item.type === 'service');
       
       // Get primary category from first service's category or existing business category
@@ -589,7 +607,10 @@ const BusinessInformation = () => {
         ? selectedServices[0].categoryId 
         : (business.categoryId || null);
       
-      // Convert services to array of strings for backend
+      // Convert to subCategoryIds array (many-to-many relationship)
+      const subCategoryIds = selectedServices.map(item => item.id).filter(id => id);
+      
+      // Also keep services array for backward compatibility
       const servicesToSave = selectedServices.map(item => item.name);
 
       // Prepare submit data - only send fields that exist in the model
@@ -609,7 +630,15 @@ const BusinessInformation = () => {
         submitData.categoryId = parseInt(primaryCategoryId);
       }
 
-      // Add services (always include, even if empty array to clear existing)
+      // Send subCategoryIds for many-to-many relationship
+      if (subCategoryIds.length > 0) {
+        submitData.subCategoryIds = subCategoryIds;
+      } else {
+        // If no subcategories selected, set to empty array to clear existing relationships
+        submitData.subCategoryIds = [];
+      }
+
+      // Add services (always include, even if empty array to clear existing) - for backward compatibility
       submitData.services = servicesToSave;
 
       // Add optional fields only if they have values
@@ -645,36 +674,54 @@ const BusinessInformation = () => {
       const updatedBusiness = businessRes.data.business;
       setBusiness(updatedBusiness);
       
-      // Re-initialize selected items from updated business data (only services)
+      // Re-initialize selected items from updated business data
+      // Now use subcategories from the many-to-many relationship
       const selected = [];
-      
-      // Add services if exists - handle both array and JSON string
-      let bizServices = updatedBusiness.services || [];
-      if (typeof bizServices === 'string') {
-        try {
-          bizServices = JSON.parse(bizServices);
-        } catch (e) {
-          console.error('Error parsing services JSON:', e);
-          bizServices = [];
-        }
-      }
-      if (Array.isArray(bizServices) && bizServices.length > 0 && categoriesWithServices.length > 0) {
-        bizServices.forEach(serviceName => {
-          // Find which category this service belongs to
-          for (const cat of categoriesWithServices) {
-            const service = cat.subcategories.find(sub => sub.name === serviceName);
-            if (service) {
-              selected.push({
-                type: 'service',
-                id: service.id,
-                name: service.name,
-                categoryId: cat.id,
-                categoryName: cat.name
-              });
-              break;
-            }
+
+      // First, try to load from business.subcategories (many-to-many relationship)
+      if (updatedBusiness.subcategories && Array.isArray(updatedBusiness.subcategories) && updatedBusiness.subcategories.length > 0) {
+        updatedBusiness.subcategories.forEach(subcategory => {
+          // Find the category for this subcategory
+          const category = categoriesWithServices.find(cat => cat.id === subcategory.categoryId);
+          if (category) {
+            selected.push({
+              type: 'service',
+              id: subcategory.id,
+              name: subcategory.name,
+              categoryId: category.id,
+              categoryName: category.name
+            });
           }
         });
+      } else {
+        // Fallback: Load from services array (backward compatibility)
+        let bizServices = updatedBusiness.services || [];
+        if (typeof bizServices === 'string') {
+          try {
+            bizServices = JSON.parse(bizServices);
+          } catch (e) {
+            console.error('Error parsing services JSON:', e);
+            bizServices = [];
+          }
+        }
+        if (Array.isArray(bizServices) && bizServices.length > 0 && categoriesWithServices.length > 0) {
+          bizServices.forEach(serviceName => {
+            // Find which category this service belongs to
+            for (const cat of categoriesWithServices) {
+              const service = cat.subcategories.find(sub => sub.name === serviceName);
+              if (service) {
+                selected.push({
+                  type: 'service',
+                  id: service.id,
+                  name: service.name,
+                  categoryId: cat.id,
+                  categoryName: cat.name
+                });
+                break;
+              }
+            }
+          });
+        }
       }
       
       setSelectedItems(selected);
@@ -815,7 +862,7 @@ const BusinessInformation = () => {
                        </button>
                      </div>
                    ))}
-                 </div>
+            </div>
                )}
 
               {/* Multi-Select Dropdown */}

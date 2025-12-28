@@ -60,16 +60,6 @@ const AdminProposals = () => {
     return statusMap[status] || 'pending';
   };
 
-  const getPayoutStatusBadgeClass = (status) => {
-    const statusMap = {
-      'pending': 'pending',
-      'processing': 'pending',
-      'completed': 'active',
-      'failed': 'rejected'
-    };
-    return statusMap[status] || 'pending';
-  };
-
   if (loading) {
     return <div className="loading"><div className="spinner"></div></div>;
   }
@@ -121,7 +111,6 @@ const AdminProposals = () => {
               <th>Price</th>
               <th>Status</th>
               <th>Payment Status</th>
-              <th>Payout Status</th>
               <th>Created Date</th>
               <th>Actions</th>
             </tr>
@@ -162,15 +151,6 @@ const AdminProposals = () => {
                       'N/A'
                     )}
                   </td>
-                  <td>
-                    {proposal.payoutStatus ? (
-                      <span className={`status-badge ${getPayoutStatusBadgeClass(proposal.payoutStatus)}`}>
-                        {proposal.payoutStatus}
-                      </span>
-                    ) : (
-                      'N/A'
-                    )}
-                  </td>
                   <td>{new Date(proposal.createdAt).toLocaleDateString()}</td>
                   <td>
                     <div className="action-buttons">
@@ -187,7 +167,7 @@ const AdminProposals = () => {
               ))
             ) : (
               <tr>
-                <td colSpan="9" className="empty-state">No proposals found</td>
+                <td colSpan="8" className="empty-state">No proposals found</td>
               </tr>
             )}
           </tbody>
@@ -289,41 +269,6 @@ const AdminProposals = () => {
                   {selectedProposal.paidAt && (
                     <div>
                       <strong>Paid At:</strong> {new Date(selectedProposal.paidAt).toLocaleString()}
-                    </div>
-                  )}
-                </div>
-              </div>
-              <div className="form-group">
-                <label>Payout Information</label>
-                <div>
-                  <div style={{ marginBottom: '8px' }}>
-                    <strong>Payout Status:</strong>{' '}
-                    {selectedProposal.payoutStatus ? (
-                      <span className={`status-badge ${getPayoutStatusBadgeClass(selectedProposal.payoutStatus)}`}>
-                        {selectedProposal.payoutStatus}
-                      </span>
-                    ) : (
-                      'N/A'
-                    )}
-                  </div>
-                  {selectedProposal.providerPayoutAmount && (
-                    <div style={{ marginBottom: '8px' }}>
-                      <strong>Provider Payout Amount:</strong> ${parseFloat(selectedProposal.providerPayoutAmount).toFixed(2)}
-                    </div>
-                  )}
-                  {selectedProposal.platformFeeAmount && (
-                    <div style={{ marginBottom: '8px' }}>
-                      <strong>Platform Fee Amount:</strong> ${parseFloat(selectedProposal.platformFeeAmount).toFixed(2)}
-                    </div>
-                  )}
-                  {selectedProposal.stripeTransferId && (
-                    <div style={{ marginBottom: '8px' }}>
-                      <strong>Stripe Transfer ID:</strong> {selectedProposal.stripeTransferId}
-                    </div>
-                  )}
-                  {selectedProposal.payoutProcessedAt && (
-                    <div>
-                      <strong>Payout Processed At:</strong> {new Date(selectedProposal.payoutProcessedAt).toLocaleString()}
                     </div>
                   )}
                 </div>

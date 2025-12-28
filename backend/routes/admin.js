@@ -6,6 +6,8 @@ const { body, validationResult } = require('express-validator');
 const { User, Business, Review, Category, Contact, Activity, Blog, SubCategory, ReviewRequest, ServiceRequest, Lead, Proposal, WorkOrder, ProviderProfile, SubscriptionPlan, UserSubscription } = require('../models');
 const { protect, authorize } = require('../middleware/auth');
 const logActivity = require('../utils/logActivity');
+const { getLeadCost, getLeadCostInDollars, getLeadCostWithDiscount } = require('../config/leadPricing');
+const getSubscriptionBenefits = require('../utils/getSubscriptionBenefits');
 
 // @route   GET /api/admin/users/:id
 // @desc    Get user by ID (public profile)
@@ -1630,8 +1632,10 @@ router.get('/leads', async (req, res) => {
       offset
     });
 
-    // Map database statuses to frontend statuses and add frontendStatus field
-    const formattedLeads = leads.map(lead => {
+    // Map database statuses to frontend statuses and calculate lead cost
+    // For accepted leads: show the actual cost paid (stored value, converted from cents)
+    // For pending/routed leads: calculate cost based on provider's subscription (if assigned)
+    const formattedLeads = await Promise.all(leads.map(async (lead) => {
       const statusReverseMap = {
         'submitted': 'PENDING',
         'routed': lead.stripePaymentIntentId ? 'PAYMENT_PENDING' : 'PENDING',
@@ -1640,11 +1644,72 @@ router.get('/leads', async (req, res) => {
         'cancelled': 'REJECTED'
       };
 
+      const leadJson = lead.toJSON();
+      
+      let displayLeadCost = null;
+      let baseLeadCost = null;
+      let hasDiscount = false;
+      let discountPercent = 0;
+
+      // If lead is accepted and has stored leadCost, use the actual amount paid
+      if (lead.status === 'accepted' && leadJson.leadCost) {
+        const storedValue = parseFloat(leadJson.leadCost);
+        // Stored value is in cents, convert to dollars
+        displayLeadCost = storedValue / 100;
+        // Calculate base cost for reference
+        if (lead.categoryId) {
+          baseLeadCost = getLeadCostInDollars(lead.categoryId);
+        } else {
+          baseLeadCost = getLeadCostInDollars(null);
+        }
+        // Check if discount was applied (if stored cost is less than base)
+        if (baseLeadCost > displayLeadCost) {
+          hasDiscount = true;
+          discountPercent = Math.round(((baseLeadCost - displayLeadCost) / baseLeadCost) * 100);
+        }
+      } else {
+        // For pending/routed leads, calculate cost based on provider's current subscription
+        baseLeadCost = lead.categoryId 
+          ? getLeadCostInDollars(lead.categoryId) 
+          : getLeadCostInDollars(null);
+
+        if (lead.providerId) {
+          try {
+            // Get provider's subscription benefits
+            const subscriptionBenefits = await getSubscriptionBenefits(lead.providerId);
+            
+            // Calculate discounted cost
+            const leadCostCents = lead.categoryId 
+              ? getLeadCost(lead.categoryId) 
+              : getLeadCost(null);
+            const discountedCostCents = getLeadCostWithDiscount(lead.categoryId, subscriptionBenefits);
+            displayLeadCost = discountedCostCents / 100;
+            
+            // Check if discount applies
+            if (subscriptionBenefits.hasActiveSubscription && subscriptionBenefits.leadDiscountPercent > 0) {
+              hasDiscount = true;
+              discountPercent = subscriptionBenefits.leadDiscountPercent;
+            }
+          } catch (error) {
+            console.error(`Error getting subscription benefits for provider ${lead.providerId}:`, error);
+            // Fallback to base cost if error
+            displayLeadCost = baseLeadCost;
+          }
+        } else {
+          // No provider assigned yet, show base cost
+          displayLeadCost = baseLeadCost;
+        }
+      }
+
       return {
-        ...lead.toJSON(),
-        frontendStatus: statusReverseMap[lead.status] || lead.status
+        ...leadJson,
+        frontendStatus: statusReverseMap[lead.status] || lead.status,
+        leadCost: displayLeadCost,
+        baseLeadCost: baseLeadCost,
+        hasDiscount: hasDiscount,
+        discountPercent: discountPercent
       };
-    });
+    }));
 
     res.json({
       success: true,

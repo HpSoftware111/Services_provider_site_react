@@ -18,6 +18,7 @@ const NotificationPreference = require('./NotificationPreference');
 const SubscriptionPlan = require('./SubscriptionPlan');
 const UserSubscription = require('./UserSubscription');
 const PhoneVerification = require('./PhoneVerification');
+const BusinessSubCategory = require('./BusinessSubCategory');
 
 // Define associations
 User.hasMany(Business, { foreignKey: 'ownerId', as: 'businesses' });
@@ -30,8 +31,27 @@ Business.belongsTo(Category, { foreignKey: 'categoryId', as: 'category' });
 Category.hasMany(SubCategory, { foreignKey: 'categoryId', as: 'subcategories' });
 SubCategory.belongsTo(Category, { foreignKey: 'categoryId', as: 'category' });
 
+// Legacy: Keep single subCategoryId for backward compatibility (optional)
 Business.belongsTo(SubCategory, { foreignKey: 'subCategoryId', as: 'subcategory' });
-SubCategory.hasMany(Business, { foreignKey: 'subCategoryId', as: 'businesses' });
+SubCategory.hasMany(Business, { foreignKey: 'subCategoryId', as: 'legacyBusinesses' }); // Changed alias to avoid conflict
+
+// Many-to-Many: Business can have multiple subcategories from different categories
+Business.belongsToMany(SubCategory, {
+  through: BusinessSubCategory,
+  foreignKey: 'businessId',
+  otherKey: 'subCategoryId',
+  as: 'subcategories'
+});
+SubCategory.belongsToMany(Business, {
+  through: BusinessSubCategory,
+  foreignKey: 'subCategoryId',
+  otherKey: 'businessId',
+  as: 'businesses'
+});
+
+// BusinessSubCategory associations (for direct queries)
+BusinessSubCategory.belongsTo(Business, { foreignKey: 'businessId', as: 'business' });
+BusinessSubCategory.belongsTo(SubCategory, { foreignKey: 'subCategoryId', as: 'subcategory' });
 
 Business.hasMany(Review, { foreignKey: 'businessId', as: 'reviews' });
 Review.belongsTo(Business, { foreignKey: 'businessId', as: 'business' });
@@ -106,6 +126,7 @@ module.exports = {
   Category,
   SubCategory,
   Business,
+  BusinessSubCategory,
   Review,
   Blog,
   Contact,

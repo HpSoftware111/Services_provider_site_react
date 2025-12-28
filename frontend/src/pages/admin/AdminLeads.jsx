@@ -296,12 +296,6 @@ const AdminLeads = () => {
                   <div>${parseFloat(selectedLead.leadCost).toFixed(2)}</div>
                 </div>
               )}
-              {selectedLead.budgetRange && (
-                <div className="form-group">
-                  <label>Budget Range</label>
-                  <div>{selectedLead.budgetRange}</div>
-                </div>
-              )}
               {selectedLead.preferredContact && (
                 <div className="form-group">
                   <label>Preferred Contact</label>

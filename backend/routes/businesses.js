@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { Op } = require('sequelize');
 const { sequelize } = require('../config/database');
-const { Business, Category, User, Contact } = require('../models');
+const { Business, Category, SubCategory, User, Contact, BusinessSubCategory } = require('../models');
 const { protect, optionalAuth } = require('../middleware/auth');
 const logActivity = require('../utils/logActivity');
 const { getCoordinatesFromZipCode, calculateDistance, getBoundingBox } = require('../utils/geolocation');
@@ -13,16 +13,16 @@ const { getCoordinatesFromZipCode, calculateDistance, getBoundingBox } = require
 router.get('/geocode/:zipCode', async (req, res) => {
   try {
     const { zipCode } = req.params;
-    
+
     if (!zipCode) {
       return res.status(400).json({
         success: false,
         error: 'Zip code is required'
       });
     }
-    
+
     const coordinates = await getCoordinatesFromZipCode(zipCode);
-    
+
     if (coordinates && !isNaN(coordinates.lat) && !isNaN(coordinates.lng)) {
       return res.json({
         success: true,
@@ -88,7 +88,7 @@ router.get('/', optionalAuth, async (req, res) => {
 
     // Build base where clause
     const baseWhere = {};
-    
+
     // Track if we have a zip code filter to apply later
     let zipCodeFilter = null;
 
@@ -102,13 +102,20 @@ router.get('/', optionalAuth, async (req, res) => {
     }
 
     // Filter by category - support multiple categories (accept both singular and plural)
+    // BUT: Skip category filtering if subCategoryName is provided (find by service name instead)
     const categoryParam = req.query.category || req.query.categories;
-    if (categoryParam) {
+    const hasSubCategoryName = req.query.subCategoryName || req.query.serviceName;
+
+    if (categoryParam && !hasSubCategoryName) {
+      // Only apply category filter if subcategory name is NOT provided
+      // When subcategory name is provided, we find businesses by service name in services array
       const categories = Array.isArray(categoryParam) ? categoryParam : categoryParam.split(',').filter(c => c);
       if (categories.length > 0) {
         baseWhere.categoryId = { [Op.in]: categories.map(c => parseInt(c)) };
         console.log(`📋 Added category filter: categoryId in [${categories.map(c => parseInt(c)).join(', ')}]`);
       }
+    } else if (hasSubCategoryName) {
+      console.log(`📋 Skipping category filter because subcategory name is provided - finding businesses by service name in services array`);
     }
 
     // Filter by city - support multiple cities (accept both singular and plural)
@@ -230,29 +237,29 @@ router.get('/', optionalAuth, async (req, res) => {
     // Filter by zip code with radius search (20 miles default)
     let zipCoordinates = null;
     let radiusMiles = 20; // Default radius
-    
+
     if (req.query.zipCode) {
       const zipCode = Array.isArray(req.query.zipCode) ? req.query.zipCode[0] : req.query.zipCode;
       radiusMiles = parseFloat(req.query.radius) || 20; // Allow custom radius via query param
-      
+
       console.log(`🔍 Searching businesses for zip code: ${zipCode} (radius: ${radiusMiles} miles)`);
-      
+
       // Always include exact zip code match as fallback
       // This ensures businesses show up even if geocoding fails or they don't have coordinates
       const zipCodeExactMatch = { zipCode: zipCode };
-      
+
       // Get coordinates for the zip code
       try {
         console.log(`📍 Geocoding zip code: ${zipCode}...`);
         zipCoordinates = await getCoordinatesFromZipCode(zipCode);
-        
+
         if (zipCoordinates && !isNaN(zipCoordinates.lat) && !isNaN(zipCoordinates.lng)) {
           console.log(`✅ Zip code geocoded successfully: lat=${zipCoordinates.lat}, lng=${zipCoordinates.lng}`);
-          
+
           // Get bounding box for faster database query
           const boundingBox = getBoundingBox(zipCoordinates.lat, zipCoordinates.lng, radiusMiles);
           console.log(`📦 Bounding box: lat[${boundingBox.minLat.toFixed(4)}, ${boundingBox.maxLat.toFixed(4)}], lng[${boundingBox.minLng.toFixed(4)}, ${boundingBox.maxLng.toFixed(4)}]`);
-          
+
           // Create OR condition: businesses with coordinates in radius OR exact zip code match
           // IMPORTANT: We use OR so businesses without coordinates can still match by exact zip
           const zipCodeCondition = {
@@ -270,15 +277,15 @@ router.get('/', optionalAuth, async (req, res) => {
               zipCodeExactMatch
             ]
           };
-          
+
           console.log(`🔍 Zip code condition created with OR logic (coordinates in box OR exact zip match)`);
           console.log(`📋 zipCodeCondition:`, JSON.stringify(zipCodeCondition, null, 2));
-          
+
           // Store zip code filter to apply later (after all other filters are set)
           zipCodeFilter = zipCodeCondition;
           console.log(`✅ zipCodeFilter stored:`, zipCodeFilter ? 'YES' : 'NO');
           console.log(`📋 zipCodeFilter value:`, JSON.stringify(zipCodeFilter, null, 2));
-          
+
           // Store for post-processing
           req.zipCoordinates = zipCoordinates;
           req.radiusMiles = radiusMiles;
@@ -311,11 +318,64 @@ router.get('/', optionalAuth, async (req, res) => {
     }
 
     // Filter by subCategory - support multiple subcategories (accept both singular and plural)
+    // This now searches through the many-to-many relationship via business_subcategories table
+    // Also support subcategory name search in services JSON array field
     const subCategoryParam = req.query.subCategory || req.query.subCategories;
+    const subCategoryNameParam = req.query.subCategoryName || req.query.serviceName;
+    let subCategoryFilter = null;
+    let subCategoryNameFilter = null;
+
+    // Check if we have a subcategory name to search in services array
+    if (subCategoryNameParam) {
+      // Decode URL-encoded subcategory names (handles %20 for spaces, %26 for &, etc.)
+      const decodeSubCategoryName = (name) => {
+        try {
+          return decodeURIComponent(name);
+        } catch (e) {
+          // If decoding fails, return as-is
+          return name;
+        }
+      };
+
+      const decodedNames = Array.isArray(subCategoryNameParam)
+        ? subCategoryNameParam.map(decodeSubCategoryName)
+        : [decodeSubCategoryName(subCategoryNameParam)];
+
+      subCategoryNameFilter = decodedNames;
+      console.log(`📋 Added subcategory name filter (will search in services array): ${subCategoryNameFilter.join(', ')}`);
+      console.log(`   Original param: ${subCategoryNameParam}, Decoded: ${subCategoryNameFilter.join(', ')}`);
+    }
+
     if (subCategoryParam) {
       const subCategories = Array.isArray(subCategoryParam) ? subCategoryParam : subCategoryParam.split(',').filter(s => s);
       if (subCategories.length > 0) {
-        baseWhere.subCategoryId = { [Op.in]: subCategories.map(s => parseInt(s)) };
+        // Check if it's IDs or names
+        const subCategoryIds = subCategories.map(s => parseInt(s)).filter(id => !isNaN(id));
+        const subCategoryNames = subCategories.filter(s => isNaN(parseInt(s)));
+
+        if (subCategoryIds.length > 0) {
+          subCategoryFilter = subCategoryIds;
+          console.log(`📋 Added subcategory ID filter: [${subCategoryIds.join(', ')}]`);
+        }
+
+        if (subCategoryNames.length > 0) {
+          // Decode URL-encoded subcategory names
+          const decodeSubCategoryName = (name) => {
+            try {
+              return decodeURIComponent(name);
+            } catch (e) {
+              return name;
+            }
+          };
+
+          const decodedSubCategoryNames = subCategoryNames.map(decodeSubCategoryName);
+
+          if (!subCategoryNameFilter) {
+            subCategoryNameFilter = [];
+          }
+          subCategoryNameFilter = [...subCategoryNameFilter, ...decodedSubCategoryNames];
+          console.log(`📋 Added subcategory name filter (will search in services array): ${decodedSubCategoryNames.join(', ')}`);
+        }
       }
     }
 
@@ -352,11 +412,11 @@ router.get('/', optionalAuth, async (req, res) => {
       console.log(`📋 Applying zip code filter to baseWhere`);
       console.log(`📋 baseWhere before zip filter:`, JSON.stringify(baseWhere, null, 2));
       console.log(`📋 zipCodeFilter to apply:`, JSON.stringify(zipCodeFilter, null, 2));
-      
+
       // Check if baseWhere has any conditions
       const hasConditions = Object.keys(baseWhere).length > 0 || baseWhere[Op.or] || baseWhere[Op.and];
       console.log(`📋 hasConditions:`, hasConditions);
-      
+
       if (hasConditions) {
         // Combine existing conditions with zip code filter using Op.and
         if (baseWhere[Op.and]) {
@@ -382,7 +442,7 @@ router.get('/', optionalAuth, async (req, res) => {
         // Copy the entire zipCodeFilter structure
         Object.assign(baseWhere, zipCodeFilter);
       }
-      
+
       console.log(`📋 baseWhere after zip filter:`, JSON.stringify(baseWhere, null, 2));
       console.log(`📋 baseWhere keys after zip filter:`, Object.keys(baseWhere));
     } else {
@@ -395,6 +455,11 @@ router.get('/', optionalAuth, async (req, res) => {
 
     // Helper function to merge conditions with status filters
     const mergeWithStatusFilters = (conditions) => {
+      if (!conditions || Object.keys(conditions).length === 0) {
+        // If conditions are empty, just return status filters
+        return statusFilters;
+      }
+
       if (conditions[Op.and]) {
         // If we have Op.and, add status filters to the array
         return {
@@ -409,8 +474,10 @@ router.get('/', optionalAuth, async (req, res) => {
           ]
         };
       } else {
-        // No special operators, just merge
-        return { ...conditions, ...statusFilters };
+        // No special operators, combine using Op.and to ensure status filters are applied
+        return {
+          [Op.and]: [conditions, statusFilters]
+        };
       }
     };
 
@@ -434,45 +501,227 @@ router.get('/', optionalAuth, async (req, res) => {
       whereClause = mergeWithStatusFilters(baseWhere);
     }
 
+    // Debug: Log the final whereClause structure
+    if (req.query.zipCode) {
+      console.log(`🔍 Final whereClause structure:`, JSON.stringify(whereClause, null, 2));
+      console.log(`🔍 whereClause has Op.and:`, whereClause[Op.and] ? 'YES' : 'NO');
+      console.log(`🔍 whereClause has Op.or:`, whereClause[Op.or] ? 'YES' : 'NO');
+      if (whereClause[Op.and]) {
+        console.log(`🔍 Op.and array length:`, whereClause[Op.and].length);
+        whereClause[Op.and].forEach((condition, idx) => {
+          console.log(`🔍   Condition ${idx}:`, JSON.stringify(condition, null, 2));
+        });
+      }
+    }
+
     // Safety check: if zip code was provided but baseWhere is empty, add exact zip match
     if (req.query.zipCode && Object.keys(baseWhere).length === 0) {
       console.warn(`⚠️  baseWhere is empty but zipCode was provided! Adding exact zip match as fallback.`);
       const zipCode = Array.isArray(req.query.zipCode) ? req.query.zipCode[0] : req.query.zipCode;
       baseWhere.zipCode = zipCode;
+      // Rebuild whereClause with the zip code
+      whereClause = mergeWithStatusFilters(baseWhere);
     }
 
-    // Log the where clause for debugging
+    // Log the where clause for debugging and test it
     if (req.query.zipCode) {
       console.log(`📋 baseWhere before merge:`, JSON.stringify(baseWhere, null, 2));
       console.log(`📋 Final WHERE clause:`, JSON.stringify(whereClause, null, 2));
       console.log(`📋 whereClause keys:`, Object.keys(whereClause));
-      console.log(`📋 whereClause type:`, typeof whereClause);
+      console.log(`📋 Status filters required: isActive=true, isPublic=true`);
+
+      // Test the whereClause before the main query
+      try {
+        const testCount = await Business.count({ where: whereClause });
+        console.log(`📊 Test count with whereClause: ${testCount} businesses`);
+      } catch (error) {
+        console.error(`❌ Error testing whereClause:`, error.message);
+        console.error(`   Stack:`, error.stack);
+      }
     }
 
+    // Build include array - for zipcode searches, exclude subcategories to avoid distinct count issues
+    const isZipCodeSearch = req.query.zipCode && req.zipCoordinates;
+    const includeArray = [
+      { model: Category, as: 'category', attributes: ['id', 'name', 'slug', 'icon'] },
+      { model: User, as: 'owner', attributes: ['id', 'name', 'email', 'avatar'] }
+    ];
+
+    // Only include subcategories in main query if filtering by them AND not doing zipcode search
+    // For zipcode searches, we'll load subcategories separately to avoid distinct count issues
+    const shouldIncludeSubcategories = subCategoryFilter !== null && !isZipCodeSearch;
+
+    if (shouldIncludeSubcategories) {
+      includeArray.push({
+        model: SubCategory,
+        as: 'subcategories',
+        attributes: ['id', 'name', 'slug', 'icon', 'description', 'categoryId'],
+        through: { attributes: [] },
+        where: { id: { [Op.in]: subCategoryFilter } },
+        required: true // INNER JOIN when filtering by subcategory
+      });
+    }
+
+    // Query businesses - use distinct only when filtering by subcategories
     let { count, rows: businesses } = await Business.findAndCountAll({
       where: whereClause,
-      include: [
-        { model: Category, as: 'category', attributes: ['id', 'name', 'slug', 'icon'] },
-        { model: User, as: 'owner', attributes: ['id', 'name', 'email', 'avatar'] }
-      ],
+      include: includeArray,
+      ...(shouldIncludeSubcategories && { distinct: true }), // Only use distinct when filtering by subcategory
       order: buildOrderFromQuery(req.query.sort),
-      limit: req.query.zipCode && req.zipCoordinates ? 200 : limit, // Get more results for radius filtering
-      offset: req.query.zipCode && req.zipCoordinates ? 0 : offset // Don't paginate before radius filter
+      limit: isZipCodeSearch ? 200 : limit, // Get more results for radius filtering
+      offset: isZipCodeSearch ? 0 : offset // Don't paginate before radius filter
     });
 
-    console.log(`📊 Database query returned ${businesses.length} businesses (total count: ${count})`);
-    
-    // Log sample businesses for debugging
-    if (businesses.length > 0 && req.query.zipCode) {
-      const sample = businesses[0].toJSON();
-      console.log(`   Sample business:`, {
-        id: sample.id,
-        name: sample.name,
-        zipCode: sample.zipCode,
-        latitude: sample.latitude,
-        longitude: sample.longitude,
-        categoryId: sample.categoryId
+    // Load subcategories separately if not included in main query
+    // This avoids distinct count issues with many-to-many relationships, especially for zipcode searches
+    // Declare outside the if block so it's available for radius filtering
+    let subcategoriesByBusiness = {};
+    if (!shouldIncludeSubcategories && businesses.length > 0) {
+      const businessIds = businesses.map(b => b.id);
+      const businessSubcategories = await BusinessSubCategory.findAll({
+        where: { businessId: { [Op.in]: businessIds } },
+        include: [{
+          model: SubCategory,
+          as: 'subcategory',
+          attributes: ['id', 'name', 'slug', 'icon', 'description', 'categoryId']
+        }]
       });
+
+      // Group subcategories by businessId
+      businessSubcategories.forEach(bs => {
+        try {
+          if (!subcategoriesByBusiness[bs.businessId]) {
+            subcategoriesByBusiness[bs.businessId] = [];
+          }
+          if (bs.subcategory) {
+            // Handle both Sequelize instance and plain object
+            const subcategoryData = bs.subcategory.toJSON ? bs.subcategory.toJSON() : bs.subcategory;
+            subcategoriesByBusiness[bs.businessId].push(subcategoryData);
+          }
+        } catch (err) {
+          console.error(`⚠️  Error processing subcategory for business ${bs.businessId}:`, err.message);
+          // Continue processing other businesses
+        }
+      });
+
+      // Attach subcategories to businesses
+      // Use both setDataValue and direct property assignment to ensure it's preserved
+      businesses.forEach(business => {
+        const subcats = subcategoriesByBusiness[business.id] || [];
+        business.setDataValue('subcategories', subcats);
+        // Also set as direct property to ensure it's included in toJSON()
+        business.dataValues.subcategories = subcats;
+      });
+
+      console.log(`📊 Loaded subcategories for ${Object.keys(subcategoriesByBusiness).length} businesses`);
+      // Log sample subcategories for debugging
+      if (Object.keys(subcategoriesByBusiness).length > 0) {
+        const sampleBusinessId = Object.keys(subcategoriesByBusiness)[0];
+        console.log(`   Sample: Business ${sampleBusinessId} has subcategories:`,
+          subcategoriesByBusiness[sampleBusinessId].map(sub => sub.name || sub.id).join(', '));
+      }
+    }
+
+    console.log(`📊 Database query returned ${businesses.length} businesses (total count: ${count})`);
+
+    // Log sample businesses for debugging with status info
+    if (req.query.zipCode) {
+      if (businesses.length > 0) {
+        const sample = businesses[0].toJSON();
+        console.log(`   Sample business:`, {
+          id: sample.id,
+          name: sample.name,
+          zipCode: sample.zipCode,
+          latitude: sample.latitude,
+          longitude: sample.longitude,
+          categoryId: sample.categoryId,
+          isActive: sample.isActive,
+          isPublic: sample.isPublic,
+          services: sample.services
+        });
+      } else {
+        console.log(`   ⚠️  No businesses found! Running comprehensive diagnostic...`);
+
+        const zipCode = Array.isArray(req.query.zipCode) ? req.query.zipCode[0] : req.query.zipCode;
+
+        // Diagnostic 1: Check total businesses
+        const totalBusinesses = await Business.count();
+        const activePublicBusinesses = await Business.count({
+          where: { isActive: true, isPublic: true }
+        });
+        console.log(`   📊 Total businesses in DB: ${totalBusinesses}`);
+        console.log(`   📊 Active+Public businesses: ${activePublicBusinesses}`);
+
+        // Diagnostic 2: Check businesses with exact zip code
+        const zipCheck = await Business.count({
+          where: { zipCode: zipCode }
+        });
+        const zipActiveCheck = await Business.count({
+          where: {
+            zipCode: zipCode,
+            isActive: true,
+            isPublic: true
+          }
+        });
+        console.log(`   📊 Businesses with zipCode="${zipCode}": ${zipCheck}`);
+        console.log(`   📊 Active+Public with zipCode="${zipCode}": ${zipActiveCheck}`);
+
+        // Diagnostic 3: Check category filter if present
+        if (baseWhere.categoryId) {
+          const categoryIdValue = baseWhere.categoryId[Op.in] || baseWhere.categoryId;
+          const categoryCheck = await Business.count({
+            where: { categoryId: categoryIdValue }
+          });
+          const activeCheck = await Business.count({
+            where: {
+              categoryId: categoryIdValue,
+              isActive: true,
+              isPublic: true
+            }
+          });
+          console.log(`   📊 Businesses with category: ${categoryCheck}, Active+Public: ${activeCheck}`);
+
+          const zipCategoryCheck = await Business.count({
+            where: {
+              categoryId: categoryIdValue,
+              zipCode: zipCode
+            }
+          });
+          const zipCategoryActiveCheck = await Business.count({
+            where: {
+              categoryId: categoryIdValue,
+              zipCode: zipCode,
+              isActive: true,
+              isPublic: true
+            }
+          });
+          console.log(`   📊 Businesses with category+zip: ${zipCategoryCheck}, Active+Public: ${zipCategoryActiveCheck}`);
+        }
+
+        // Diagnostic 4: Check geocoding and bounding box
+        if (req.zipCoordinates) {
+          console.log(`   📍 Geocoding successful: lat=${req.zipCoordinates.lat}, lng=${req.zipCoordinates.lng}`);
+          const boundingBox = getBoundingBox(req.zipCoordinates.lat, req.zipCoordinates.lng, req.radiusMiles);
+          const businessesInBox = await Business.count({
+            where: {
+              latitude: { [Op.between]: [boundingBox.minLat, boundingBox.maxLat] },
+              longitude: { [Op.between]: [boundingBox.minLng, boundingBox.maxLng] },
+              isActive: true,
+              isPublic: true
+            }
+          });
+          console.log(`   📊 Businesses in bounding box (active+public): ${businessesInBox}`);
+        } else {
+          console.log(`   ⚠️  Geocoding failed or not performed`);
+        }
+
+        // Diagnostic 5: Test the actual whereClause
+        console.log(`   🔍 Testing whereClause directly...`);
+        const testCount = await Business.count({
+          where: whereClause
+        });
+        console.log(`   📊 Businesses matching whereClause: ${testCount}`);
+      }
     }
 
     // If radius search was used, filter by exact distance and add distance to results
@@ -493,18 +742,80 @@ router.get('/', optionalAuth, async (req, res) => {
 
       const businessesWithDistance = businesses
         .map(business => {
-          const businessData = business.toJSON();
-          
-          // If business has coordinates, calculate distance
-          if (business.latitude != null && business.longitude != null) {
-            const businessLat = parseFloat(business.latitude);
-            const businessLng = parseFloat(business.longitude);
-            
-            // Validate coordinates
-            if (isNaN(businessLat) || isNaN(businessLng)) {
-              // Invalid coordinates but exact zip match - include it
+          try {
+            const businessData = business.toJSON ? business.toJSON() : business;
+
+            // Preserve subcategories if they were loaded separately
+            // Check multiple sources to ensure we get subcategories
+            if (business.subcategories) {
+              businessData.subcategories = business.subcategories;
+            } else if (business.dataValues && business.dataValues.subcategories) {
+              businessData.subcategories = business.dataValues.subcategories;
+            } else if (subcategoriesByBusiness && subcategoriesByBusiness[business.id]) {
+              // Fallback: get from the map we created earlier
+              businessData.subcategories = subcategoriesByBusiness[business.id];
+            } else {
+              businessData.subcategories = [];
+            }
+
+            // If business has coordinates, calculate distance
+            if (business.latitude != null && business.longitude != null) {
+              const businessLat = parseFloat(business.latitude);
+              const businessLng = parseFloat(business.longitude);
+
+              // Validate coordinates
+              if (isNaN(businessLat) || isNaN(businessLng)) {
+                // Invalid coordinates but exact zip match - include it
+                if (business.zipCode === zipCode) {
+                  businessesExactZip++;
+                  // Ensure subcategories are included
+                  if (!businessData.subcategories && subcategoriesByBusiness && subcategoriesByBusiness[business.id]) {
+                    businessData.subcategories = subcategoriesByBusiness[business.id];
+                  }
+                  return {
+                    ...businessData,
+                    distance: null // No distance available
+                  };
+                }
+                return null;
+              }
+
+              businessesWithCoordinates++;
+              const distance = calculateDistance(
+                zipLat,
+                zipLng,
+                businessLat,
+                businessLng
+              );
+
+              // Include businesses within radius OR exact zip match
+              if (distance <= radiusMiles || business.zipCode === zipCode) {
+                if (distance <= radiusMiles) {
+                  businessesInRadius++;
+                } else {
+                  businessesExactZip++;
+                }
+                // Ensure subcategories are included
+                if (!businessData.subcategories && subcategoriesByBusiness && subcategoriesByBusiness[business.id]) {
+                  businessData.subcategories = subcategoriesByBusiness[business.id];
+                }
+                return {
+                  ...businessData,
+                  distance: distance <= radiusMiles ? parseFloat(distance.toFixed(2)) : null
+                };
+              }
+
+              // Outside radius and not exact zip match - exclude
+              return null;
+            } else {
+              // Business has no coordinates - include if exact zip code match
+              businessesWithoutCoordinates++;
               if (business.zipCode === zipCode) {
                 businessesExactZip++;
+                // Ensure subcategories are included
+                if (!businessData.subcategories && subcategoriesByBusiness && subcategoriesByBusiness[business.id]) {
+                  businessData.subcategories = subcategoriesByBusiness[business.id];
+                }
                 return {
                   ...businessData,
                   distance: null // No distance available
@@ -512,44 +823,13 @@ router.get('/', optionalAuth, async (req, res) => {
               }
               return null;
             }
-
-            businessesWithCoordinates++;
-            const distance = calculateDistance(
-              zipLat,
-              zipLng,
-              businessLat,
-              businessLng
-            );
-
-            // Include businesses within radius OR exact zip match
-            if (distance <= radiusMiles || business.zipCode === zipCode) {
-              if (distance <= radiusMiles) {
-                businessesInRadius++;
-              } else {
-                businessesExactZip++;
-              }
-              return {
-                ...businessData,
-                distance: distance <= radiusMiles ? parseFloat(distance.toFixed(2)) : null
-              };
-            }
-            
-            // Outside radius and not exact zip match - exclude
-            return null;
-          } else {
-            // Business has no coordinates - include if exact zip code match
-            businessesWithoutCoordinates++;
-            if (business.zipCode === zipCode) {
-              businessesExactZip++;
-              return {
-                ...businessData,
-                distance: null // No distance available
-              };
-            }
-            return null;
+          } catch (err) {
+            console.error(`⚠️  Error processing business ${business?.id || 'unknown'} for radius filter:`, err.message);
+            console.error('   Stack:', err.stack);
+            return null; // Exclude this business if there's an error
           }
         })
-        .filter(business => business !== null) // Remove null entries
+        .filter(business => business !== null) // Remove null entries from radius filtering
         .sort((a, b) => {
           // Sort: businesses with distance first (by distance), then businesses without distance
           if (a.distance !== null && b.distance !== null) {
@@ -589,6 +869,72 @@ router.get('/', optionalAuth, async (req, res) => {
       console.log(`📊 Found ${businesses.length} businesses with exact zip code match`);
     }
 
+    // Apply subcategory name filter to all businesses (not just radius searches)
+    // This filters businesses by subcategory name in the services array field
+    if (subCategoryNameFilter && subCategoryNameFilter.length > 0) {
+      console.log(`🔍 Applying subcategory name filter to ${businesses.length} businesses (searching in services array)`);
+      console.log(`   Filter names: [${subCategoryNameFilter.join(', ')}]`);
+      const beforeFilterCount = businesses.length;
+
+      // Helper function to check if a business has matching service
+      const businessHasMatchingService = (businessData, businessServices) => {
+        let servicesArray = [];
+
+        // Handle JSON string format
+        if (typeof businessServices === 'string') {
+          try {
+            servicesArray = JSON.parse(businessServices);
+          } catch (e) {
+            return false;
+          }
+        } else if (Array.isArray(businessServices)) {
+          servicesArray = businessServices;
+        } else {
+          return false;
+        }
+
+        // Check if any of the subcategory names are in the services array
+        return subCategoryNameFilter.some(filterName => {
+          // Normalize the filter name: trim, lowercase, and normalize whitespace
+          const normalizedFilterName = filterName.trim().toLowerCase().replace(/\s+/g, ' ');
+
+          return servicesArray.some(service => {
+            // Get service name (handle both string and object formats)
+            const serviceName = typeof service === 'string' ? service : (service.name || service);
+            if (!serviceName) return false;
+
+            // Normalize the service name: trim, lowercase, and normalize whitespace
+            const normalizedServiceName = String(serviceName).trim().toLowerCase().replace(/\s+/g, ' ');
+
+            // Exact match after normalization (handles special chars like &, /, etc. as-is)
+            return normalizedServiceName === normalizedFilterName;
+          });
+        });
+      };
+
+      businesses = businesses.filter(business => {
+        try {
+          const businessData = business.toJSON ? business.toJSON() : business;
+          const businessServices = businessData.services || [];
+
+          const hasMatchingService = businessHasMatchingService(businessData, businessServices);
+
+          if (!hasMatchingService) {
+            return false; // Exclude this business
+          }
+
+          return true;
+        } catch (err) {
+          console.error(`⚠️  Error filtering business ${business?.id || 'unknown'} by subcategory name:`, err.message);
+          return false; // Exclude this business if there's an error
+        }
+      });
+
+      // Update count after filtering
+      count = businesses.length;
+      console.log(`✅ After subcategory name filter: ${businesses.length} businesses (filtered out ${beforeFilterCount - businesses.length})`);
+    }
+
     // Final logging
     if (req.query.zipCode) {
       console.log(`✅ Final response: ${businesses.length} businesses returned`);
@@ -610,7 +956,13 @@ router.get('/', optionalAuth, async (req, res) => {
       businesses
     });
   } catch (error) {
-    res.status(500).json({ error: 'Server error' });
+    console.error('❌ Error in GET /api/businesses:', error);
+    console.error('   Message:', error.message);
+    console.error('   Stack:', error.stack);
+    res.status(500).json({
+      error: 'Server error',
+      message: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 });
 
@@ -763,6 +1115,13 @@ router.get('/my-businesses', protect, async (req, res) => {
           as: 'category',
           attributes: ['id', 'name', 'slug', 'icon'],
           required: false // LEFT JOIN instead of INNER JOIN
+        },
+        {
+          model: SubCategory,
+          as: 'subcategories',
+          attributes: ['id', 'name', 'slug', 'icon', 'description', 'categoryId'],
+          through: { attributes: [] },
+          required: false
         }
       ],
       order: [['createdAt', 'DESC']],
@@ -847,6 +1206,39 @@ router.post('/', optionalAuth, async (req, res) => {
 
     const slug = generateSlug(req.body.name);
 
+    // Handle subCategoryIds if provided
+    let subCategoryIds = req.body.subCategoryIds || [];
+    if (!Array.isArray(subCategoryIds)) {
+      subCategoryIds = [];
+    }
+
+    // Validate subcategories if provided
+    if (subCategoryIds.length > 0) {
+      const validSubCategories = await SubCategory.findAll({
+        where: {
+          id: { [Op.in]: subCategoryIds },
+          isActive: true
+        }
+      });
+
+      if (validSubCategories.length !== subCategoryIds.length) {
+        return res.status(400).json({
+          success: false,
+          error: 'One or more subcategories are invalid or inactive'
+        });
+      }
+
+      // Set primary categoryId from first subcategory if not provided
+      if (!req.body.categoryId && validSubCategories.length > 0) {
+        const firstSubCategory = await SubCategory.findByPk(validSubCategories[0].id, {
+          include: [{ model: Category, as: 'category' }]
+        });
+        if (firstSubCategory && firstSubCategory.category) {
+          req.body.categoryId = firstSubCategory.category.id;
+        }
+      }
+    }
+
     // Create business (ownerId is optional for anonymous users)
     const business = await Business.create({
       name: req.body.name,
@@ -868,8 +1260,19 @@ router.post('/', optionalAuth, async (req, res) => {
       isVerified: false,
       tags: req.body.tags || null,
       latitude: req.body.latitude || null,
-      longitude: req.body.longitude || null
+      longitude: req.body.longitude || null,
+      services: req.body.services || []
     });
+
+    // Create subcategories relationships if provided
+    if (subCategoryIds.length > 0) {
+      await BusinessSubCategory.bulkCreate(
+        subCategoryIds.map(subCategoryId => ({
+          businessId: business.id,
+          subCategoryId: subCategoryId
+        }))
+      );
+    }
 
     // Update user role to business_owner if user is logged in (but don't change admin role)
     if (req.user) {
@@ -1033,6 +1436,13 @@ router.get('/:id', optionalAuth, async (req, res) => {
     const business = await Business.findByPk(req.params.id, {
       include: [
         { model: Category, as: 'category', attributes: ['id', 'name', 'slug', 'icon'] },
+        {
+          model: SubCategory,
+          as: 'subcategories',
+          attributes: ['id', 'name', 'slug', 'icon', 'description', 'categoryId'],
+          through: { attributes: [] },
+          required: false
+        },
         { model: User, as: 'owner', attributes: ['id', 'name', 'email'] }
       ],
       attributes: {
@@ -1150,13 +1560,47 @@ router.put('/:id', protect, async (req, res) => {
     // Prepare update data
     const updateData = { ...req.body };
 
+    // Handle subCategoryIds array (many-to-many relationship)
+    let subCategoryIds = null;
+    if (updateData.subCategoryIds !== undefined) {
+      subCategoryIds = updateData.subCategoryIds;
+      delete updateData.subCategoryIds; // Remove from updateData as it's not a direct field
+
+      // Validate subCategoryIds
+      if (!Array.isArray(subCategoryIds)) {
+        return res.status(400).json({ error: 'subCategoryIds must be an array' });
+      }
+
+      // Validate all subcategories exist
+      const validSubCategories = await SubCategory.findAll({
+        where: {
+          id: { [Op.in]: subCategoryIds },
+          isActive: true
+        }
+      });
+
+      if (validSubCategories.length !== subCategoryIds.length) {
+        return res.status(400).json({ error: 'One or more subcategories are invalid or inactive' });
+      }
+
+      // Set primary categoryId from first subcategory if not provided
+      if (!updateData.categoryId && validSubCategories.length > 0) {
+        const firstSubCategory = await SubCategory.findByPk(validSubCategories[0].id, {
+          include: [{ model: Category, as: 'category' }]
+        });
+        if (firstSubCategory && firstSubCategory.category) {
+          updateData.categoryId = firstSubCategory.category.id;
+        }
+      }
+    }
+
     // Validate services field if provided (should be an array of strings)
     if (updateData.services !== undefined) {
       if (!Array.isArray(updateData.services)) {
         return res.status(400).json({ error: 'Services must be an array' });
       }
       // Ensure all services are strings
-      updateData.services = updateData.services.filter(service => 
+      updateData.services = updateData.services.filter(service =>
         typeof service === 'string' && service.trim().length > 0
       ).map(service => service.trim());
     }
@@ -1179,10 +1623,34 @@ router.put('/:id', protect, async (req, res) => {
     // Update business
     await business.update(updateData);
 
+    // Update subcategories relationship if provided
+    if (subCategoryIds !== null) {
+      // Remove all existing relationships
+      await BusinessSubCategory.destroy({
+        where: { businessId: business.id }
+      });
+
+      // Create new relationships
+      if (subCategoryIds.length > 0) {
+        await BusinessSubCategory.bulkCreate(
+          subCategoryIds.map(subCategoryId => ({
+            businessId: business.id,
+            subCategoryId: subCategoryId
+          }))
+        );
+      }
+    }
+
     // Reload business with associations
     const updatedBusiness = await Business.findByPk(business.id, {
       include: [
         { model: Category, as: 'category', attributes: ['id', 'name', 'slug', 'icon'] },
+        {
+          model: SubCategory,
+          as: 'subcategories',
+          attributes: ['id', 'name', 'slug', 'icon', 'description'],
+          through: { attributes: [] } // Don't include junction table attributes
+        },
         { model: User, as: 'owner', attributes: ['id', 'name', 'email'] }
       ],
       attributes: {
@@ -1235,14 +1703,14 @@ router.delete('/:id', protect, async (req, res) => {
 router.get('/geocode/:zipCode', async (req, res) => {
   try {
     const { zipCode } = req.params;
-    
+
     if (!zipCode) {
       return res.status(400).json({
         success: false,
         error: 'Zip code is required'
       });
     }
-    
+
     // Clean zip code
     const cleanZipCode = zipCode.replace(/[\s\-]/g, '');
     if (cleanZipCode.length < 5) {
@@ -1251,9 +1719,9 @@ router.get('/geocode/:zipCode', async (req, res) => {
         error: 'Invalid zip code format'
       });
     }
-    
+
     const coordinates = await getCoordinatesFromZipCode(cleanZipCode);
-    
+
     if (coordinates && !isNaN(coordinates.lat) && !isNaN(coordinates.lng)) {
       return res.json({
         success: true,
@@ -1369,7 +1837,7 @@ ${message}
 ---
 Sent from CityLocal 101 Support System
       `
-    }).catch(() => {});
+    }).catch(() => { });
 
     // Log activity
     await logActivity({

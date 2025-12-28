@@ -2,6 +2,7 @@ import React, { useState, useEffect, useContext, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AuthContext } from '../context/AuthContext';
 import api from '../services/api';
+import MyRequests from './MyRequests';
 import './MyBusiness.css';
 
 const MyBusiness = () => {
@@ -13,10 +14,20 @@ const MyBusiness = () => {
   const [subscriptionStatus, setSubscriptionStatus] = useState(null);
   const messageRef = useRef(null);
 
+  // Check if user is a customer (not a provider/business owner)
+  const isCustomer = user && (user.role === 'user' || user.role === 'CUSTOMER');
+  const isProvider = user && (user.role === 'business_owner' || user.role === 'provider' || user.role === 'PROVIDER');
+
   useEffect(() => {
+    // Only fetch businesses and subscription if user is a provider
+    if (isProvider) {
     fetchBusinesses();
-    fetchSubscriptionStatus();
-  }, []);
+      fetchSubscriptionStatus();
+    } else {
+      setLoading(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.role]);
 
   // Scroll error into view when it appears
   useEffect(() => {
@@ -118,6 +129,11 @@ const MyBusiness = () => {
 
     return null;
   };
+
+  // If user is a customer, show My Requests page instead
+  if (isCustomer) {
+    return <MyRequests />;
+  }
 
   if (loading) {
     return (
@@ -243,8 +259,8 @@ const MyBusiness = () => {
                       {businesses.length === 1
                         ? business.description
                         : business.description.length > 120
-                          ? `${business.description.substring(0, 120)}...`
-                          : business.description}
+                        ? `${business.description.substring(0, 120)}...`
+                        : business.description}
                     </p>
                   )}
                   <div className="business-card-stats">

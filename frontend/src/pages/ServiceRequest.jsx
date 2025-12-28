@@ -182,16 +182,25 @@ const ServiceRequest = () => {
 
         setLoadingBusinesses(true);
         try {
-            // Filter businesses by zip code and category
-            const categoryId = parseInt(formData.categoryId);
-            // Backend expects 'category' or 'categories' parameter, not 'categoryId'
-            let apiUrl = `/businesses?zipCode=${formData.zipCode}&category=${categoryId}&limit=50`;
+            // Filter businesses by zip code and subcategory name (not categoryId)
+            // Backend will find businesses by subcategory name in services array
+            let apiUrl = `/businesses?zipCode=${formData.zipCode}&limit=50`;
+            
+            // Always add subcategory name to search in services array if subcategory is selected
+            if (formData.subCategoryId) {
+                const subCategoryId = parseInt(formData.subCategoryId);
+                const selectedSubCategory = subCategories.find(sub => sub.id === subCategoryId);
+                if (selectedSubCategory && selectedSubCategory.name) {
+                    apiUrl += `&subCategoryName=${encodeURIComponent(selectedSubCategory.name)}`;
+                }
+            }
 
             console.log('Loading businesses with:', {
                 zipCode: formData.zipCode,
-                categoryId: categoryId,
                 subCategoryId: formData.subCategoryId,
-                apiUrl: apiUrl
+                subCategoryName: formData.subCategoryId ? subCategories.find(sub => sub.id === parseInt(formData.subCategoryId))?.name : null,
+                apiUrl: apiUrl,
+                note: 'Not using categoryId - finding by subcategory name in services array'
             });
 
             const response = await api.get(apiUrl);
@@ -209,60 +218,86 @@ const ServiceRequest = () => {
                 } : null
             });
 
-            // Get subcategory name if subcategory is selected (for service matching)
+            // Get subcategory name and ID if subcategory is selected (for service matching)
             let selectedServiceName = null;
+            let selectedSubCategoryId = null;
             if (formData.subCategoryId) {
                 const subCategoryId = parseInt(formData.subCategoryId);
                 const selectedSubCategory = subCategories.find(sub => sub.id === subCategoryId);
                 if (selectedSubCategory) {
                     selectedServiceName = selectedSubCategory.name;
+                    selectedSubCategoryId = selectedSubCategory.id;
                 }
             }
 
             // Additional client-side filtering to ensure all businesses match:
-            // 1. Category must match
-            // 2. Service must match (if subcategory/service was selected) - check services array
+            // Service must match (if subcategory/service was selected) - check services array
             // Note: Zip code filtering is now handled by backend with 20-mile radius search
+            // Note: Category filtering is NOT used - businesses are found by subcategory name in services array
             let filteredBusinesses = (response.data.businesses || []).filter(business => {
-                // Check category match
-                if (business.categoryId !== categoryId) {
-                    return false;
-                }
-
+                // No category filtering - backend finds businesses by subcategory name in services array
+                
                 // Zip code filtering is handled by backend with radius search
                 // Backend returns businesses within 20 miles of the entered zip code
                 // No need for exact zip code matching here
 
                 // Check service match (if subcategory/service was selected)
-                // Business services are stored as an array of service names
-                if (selectedServiceName) {
-                    let businessServices = business.services || [];
+                // Now check both subcategories (many-to-many) and services array (backward compatibility)
+                if (selectedServiceName || selectedSubCategoryId) {
+                    let hasService = false;
+                    
+                    // First, check subcategories (many-to-many relationship) - preferred method
+                    // Match by ID (more reliable) or by name (fallback)
+                    if (business.subcategories && Array.isArray(business.subcategories) && business.subcategories.length > 0) {
+                        hasService = business.subcategories.some(subcategory => {
+                            if (!subcategory) return false;
+                            
+                            // Match by ID if available (most reliable)
+                            if (selectedSubCategoryId && subcategory.id === selectedSubCategoryId) {
+                                return true;
+                            }
+                            
+                            // Match by name (case-insensitive)
+                            const subcategoryName = subcategory.name || '';
+                            if (selectedServiceName && subcategoryName.toLowerCase().trim() === selectedServiceName.toLowerCase().trim()) {
+                                return true;
+                            }
+                            
+                            return false;
+                        });
+                    }
+                    
+                    // If not found in subcategories, check services array (backward compatibility)
+                    if (!hasService && selectedServiceName) {
+                        let businessServices = business.services || [];
 
-                    // Handle JSON string format
-                    if (typeof businessServices === 'string') {
-                        try {
-                            businessServices = JSON.parse(businessServices);
-                        } catch (e) {
-                            console.error('Error parsing business services:', e);
+                        // Handle JSON string format
+                        if (typeof businessServices === 'string') {
+                            try {
+                                businessServices = JSON.parse(businessServices);
+                            } catch (e) {
+                                console.error('Error parsing business services:', e);
+                                businessServices = [];
+                            }
+                        }
+
+                        // Ensure it's an array
+                        if (!Array.isArray(businessServices)) {
                             businessServices = [];
                         }
-                    }
 
-                    // Ensure it's an array
-                    if (!Array.isArray(businessServices)) {
-                        businessServices = [];
+                        // Check if the selected service name is in the business's services array
+                        // Use case-insensitive matching and trim whitespace
+                        hasService = businessServices.some(service => {
+                            if (!service) return false;
+                            const serviceName = typeof service === 'string' ? service : service.name || '';
+                            return serviceName.toLowerCase().trim() === selectedServiceName.toLowerCase().trim();
+                        });
                     }
-
-                    // Check if the selected service name is in the business's services array
-                    // Use case-insensitive matching and trim whitespace
-                    const hasService = businessServices.some(service => {
-                        if (!service) return false;
-                        const serviceName = typeof service === 'string' ? service : service.name || '';
-                        return serviceName.toLowerCase().trim() === selectedServiceName.toLowerCase().trim();
-                    });
 
                     // If service is selected but business doesn't have it, exclude this business
                     if (!hasService) {
+                        console.log(`   ⚠️  Business ${business.id} (${business.name}) excluded: doesn't have service "${selectedServiceName}"`);
                         return false;
                     }
                 }

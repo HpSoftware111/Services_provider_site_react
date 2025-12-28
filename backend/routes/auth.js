@@ -3,7 +3,7 @@ const router = express.Router();
 const { Op } = require('sequelize');
 const crypto = require('crypto');
 const { body, validationResult } = require('express-validator');
-const { User, Business, Category } = require('../models');
+const { User, Business, Category, SubCategory, BusinessSubCategory } = require('../models');
 const generateToken = require('../utils/generateToken');
 const { protect } = require('../middleware/auth');
 const logActivity = require('../utils/logActivity');
@@ -195,6 +195,39 @@ router.post('/provider-signup', [
     });
 
     // Create business linked to the user
+    // Handle subCategoryIds if provided
+    let subCategoryIds = req.body.subCategoryIds || [];
+    if (!Array.isArray(subCategoryIds)) {
+      subCategoryIds = [];
+    }
+    
+    // Validate subcategories if provided
+    if (subCategoryIds.length > 0) {
+      const validSubCategories = await SubCategory.findAll({
+        where: {
+          id: { [Op.in]: subCategoryIds },
+          isActive: true
+        }
+      });
+      
+      if (validSubCategories.length !== subCategoryIds.length) {
+        return res.status(400).json({
+          success: false,
+          error: 'One or more subcategories are invalid or inactive'
+        });
+      }
+      
+      // Set primary categoryId from first subcategory if not provided
+      if (!categoryId && validSubCategories.length > 0) {
+        const firstSubCategory = await SubCategory.findByPk(validSubCategories[0].id, {
+          include: [{ model: Category, as: 'category' }]
+        });
+        if (firstSubCategory && firstSubCategory.category) {
+          categoryId = firstSubCategory.category.id;
+        }
+      }
+    }
+
     const business = await Business.create({
       name: businessName,
       slug: slug,
@@ -211,8 +244,19 @@ router.post('/provider-signup', [
       isActive: false, // New businesses need approval
       isVerified: false,
       latitude: req.body.latitude || null,
-      longitude: req.body.longitude || null
+      longitude: req.body.longitude || null,
+      services: req.body.services || []
     });
+
+    // Create subcategories relationships if provided
+    if (subCategoryIds.length > 0) {
+      await BusinessSubCategory.bulkCreate(
+        subCategoryIds.map(subCategoryId => ({
+          businessId: business.id,
+          subCategoryId: subCategoryId
+        }))
+      );
+    }
 
     // Update user's businessId
     await user.update({ businessId: business.id });

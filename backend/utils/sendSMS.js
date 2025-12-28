@@ -282,4 +282,6 @@ const checkSMSStatus = async (messageSid) => {
 
 module.exports = sendSMS;
 module.exports.checkSMSStatus = checkSMSStatus;
+module.exports.formatPhoneNumber = formatPhoneNumber;
+module.exports.isValidPhoneNumber = isValidPhoneNumber;
 

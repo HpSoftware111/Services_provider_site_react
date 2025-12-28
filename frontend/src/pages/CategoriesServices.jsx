@@ -63,7 +63,7 @@ const CategoriesServices = () => {
           } catch (e) {
             console.error('Error parsing services JSON:', e);
             bizServices = [];
-          }
+      }
         }
         if (Array.isArray(bizServices) && bizServices.length > 0) {
           bizServices.forEach(serviceName => {
@@ -255,7 +255,7 @@ const CategoriesServices = () => {
 
     setSaving(true);
     try {
-      // All selected items are services (categories are not selectable)
+      // All selected items are services (subcategories)
       const selectedServices = selectedItems;
 
       // Get primary category from first service's category or existing business category
@@ -263,17 +263,27 @@ const CategoriesServices = () => {
         ? selectedServices[0].categoryId
         : (business?.categoryId || null);
 
-      // Convert services to array of service names for backend
+      // Convert to subCategoryIds array (many-to-many relationship)
+      const subCategoryIds = selectedServices.map(item => item.id).filter(id => id);
+
+      // Also keep services array for backward compatibility
       const servicesToSave = selectedServices.map(item => item.name);
 
       const updateData = {};
       if (primaryCategoryId) {
         updateData.categoryId = primaryCategoryId;
       }
+      // Send subCategoryIds for many-to-many relationship
+      if (subCategoryIds.length > 0) {
+        updateData.subCategoryIds = subCategoryIds;
+      } else {
+        // If no subcategories selected, set to empty array to clear existing relationships
+        updateData.subCategoryIds = [];
+      }
+      // Keep services array for backward compatibility
       if (servicesToSave.length > 0) {
         updateData.services = servicesToSave;
       } else {
-        // If no services selected, set to empty array to clear existing services
         updateData.services = [];
       }
 
@@ -284,36 +294,54 @@ const CategoriesServices = () => {
       const updatedBusiness = businessRes.data.business;
       setBusiness(updatedBusiness);
 
-      // Re-initialize selected items from updated business data (only services)
+      // Re-initialize selected items from updated business data
+      // Now use subcategories from the many-to-many relationship
       const selected = [];
 
-      // Add services if exists - handle both array and JSON string
-      let bizServices = updatedBusiness.services || [];
-      if (typeof bizServices === 'string') {
-        try {
-          bizServices = JSON.parse(bizServices);
-        } catch (e) {
-          console.error('Error parsing services JSON:', e);
-          bizServices = [];
-        }
-      }
-      if (Array.isArray(bizServices) && bizServices.length > 0) {
-        bizServices.forEach(serviceName => {
-          // Find which category this service belongs to
-          for (const cat of categoriesWithServices) {
-            const service = cat.subcategories.find(sub => sub.name === serviceName);
-            if (service) {
-              selected.push({
-                type: 'service',
-                id: service.id,
-                name: service.name,
-                categoryId: cat.id,
-                categoryName: cat.name
-              });
-              break;
-            }
+      // First, try to load from business.subcategories (many-to-many relationship)
+      if (updatedBusiness.subcategories && Array.isArray(updatedBusiness.subcategories) && updatedBusiness.subcategories.length > 0) {
+        updatedBusiness.subcategories.forEach(subcategory => {
+          // Find the category for this subcategory
+          const category = categoriesWithServices.find(cat => cat.id === subcategory.categoryId);
+          if (category) {
+            selected.push({
+              type: 'service',
+              id: subcategory.id,
+              name: subcategory.name,
+              categoryId: category.id,
+              categoryName: category.name
+            });
           }
         });
+      } else {
+        // Fallback: Load from services array (backward compatibility)
+        let bizServices = updatedBusiness.services || [];
+        if (typeof bizServices === 'string') {
+          try {
+            bizServices = JSON.parse(bizServices);
+          } catch (e) {
+            console.error('Error parsing services JSON:', e);
+            bizServices = [];
+          }
+        }
+        if (Array.isArray(bizServices) && bizServices.length > 0) {
+          bizServices.forEach(serviceName => {
+            // Find which category this service belongs to
+            for (const cat of categoriesWithServices) {
+              const service = cat.subcategories.find(sub => sub.name === serviceName);
+              if (service) {
+                selected.push({
+                  type: 'service',
+                  id: service.id,
+                  name: service.name,
+                  categoryId: cat.id,
+                  categoryName: cat.name
+                });
+                break;
+              }
+            }
+          });
+        }
       }
 
       setSelectedItems(selected);
@@ -369,23 +397,23 @@ const CategoriesServices = () => {
               <h4>Available Services</h4>
               <div className="panel-search">
                 <i className="fas fa-search"></i>
-                <input
-                  type="text"
+          <input
+            type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Search services..."
                   className="panel-search-input"
-                />
+          />
               </div>
               {selectedServiceIds.size > 0 && (
-                <button
-                  type="button"
+          <button
+            type="button"
                   onClick={handleBulkAdd}
                   className="panel-action-btn add-btn"
                   title="Add selected services"
-                >
+          >
                   <i className="fas fa-arrow-right"></i> Add ({selectedServiceIds.size})
-                </button>
+          </button>
               )}
             </div>
             <div className="panel-content">
@@ -455,7 +483,7 @@ const CategoriesServices = () => {
                 </div>
               )}
             </div>
-          </div>
+        </div>
 
           {/* Right Panel - Selected Services */}
           <div className="services-panel selected-panel">
@@ -474,7 +502,7 @@ const CategoriesServices = () => {
             </div>
             <div className="panel-content">
               {selectedItems.length > 0 ? (
-                <div className="services-list">
+          <div className="services-list">
                   {selectedItems.map((service) => {
                     const isSelected = selectedServiceIds.has(service.id);
                     return (
@@ -504,18 +532,18 @@ const CategoriesServices = () => {
                             <span className="service-category">{service.categoryName}</span>
                           )}
                         </div>
-                        <button
-                          type="button"
+                <button
+                  type="button"
                           onClick={(e) => {
                             e.stopPropagation();
                             handleServiceClick(service, true);
                           }}
                           className="service-remove-btn"
-                          title="Remove service"
-                        >
-                          <i className="fas fa-times"></i>
-                        </button>
-                      </div>
+                  title="Remove service"
+                >
+                  <i className="fas fa-times"></i>
+                </button>
+              </div>
                     );
                   })}
                 </div>
@@ -523,8 +551,8 @@ const CategoriesServices = () => {
                 <div className="panel-empty">
                   <i className="fas fa-inbox"></i>
                   <p>No services selected yet. Select services from the left panel to add them here.</p>
-                </div>
-              )}
+          </div>
+        )}
             </div>
           </div>
         </div>

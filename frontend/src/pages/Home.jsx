@@ -170,9 +170,9 @@ const Home = () => {
           })}
         </script>
       </Helmet>
-      <div className="home">
-        {/* Hero Section */}
-        <section className="hero">
+    <div className="home">
+      {/* Hero Section */}
+      <section className="hero">
         <div className="container">
           <div className="hero-content">
             <h1>Discover Businesses Near You</h1>
@@ -438,7 +438,7 @@ const Home = () => {
           )}
         </div>
       </section>
-      </div>
+    </div>
     </>
   );
 };
