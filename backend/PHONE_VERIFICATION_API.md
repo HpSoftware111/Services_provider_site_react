@@ -313,3 +313,4 @@ if (statusResponse.data.verified) {
 - **Security:** All endpoints require authentication (protected routes)
 
 
+
